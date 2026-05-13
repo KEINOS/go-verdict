@@ -1,0 +1,26 @@
+version: "2"
+
+run:
+  tests: true
+  allow-parallel-runners: true
+
+linters:
+  default: all
+  disable:
+    # Project policy
+    - depguard
+    - exhaustruct
+    - noinlineerr
+    - tagliatelle
+    - testpackage
+    # Deprecated linters
+    - wsl
+    - gomodguard
+  settings:
+    paralleltest:
+      ignore-missing: false
+    varnamelen:
+      ignore-names:
+        - ok
+        - t
+        - tt
