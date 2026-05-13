@@ -14,6 +14,12 @@ func TestExampleFast(t *testing.T) {
 	}
 }
 
+func TestExampleOriginal(t *testing.T) {
+	if ExampleOriginal() != ExampleEnhanced() {
+		t.Error("ExampleOriginal() should match ExampleEnhanced()")
+	}
+}
+
 func BenchmarkExampleSlow(b *testing.B) {
 	for b.Loop() {
 		ExampleSlow()
@@ -24,4 +30,18 @@ func BenchmarkExampleFast(b *testing.B) {
 	for b.Loop() {
 		ExampleFast()
 	}
+}
+
+func BenchmarkEnhance(b *testing.B) {
+	b.Run("original", func(b *testing.B) {
+		for b.Loop() {
+			ExampleOriginal()
+		}
+	})
+
+	b.Run("enhanced", func(b *testing.B) {
+		for b.Loop() {
+			ExampleEnhanced()
+		}
+	})
 }

@@ -14,3 +14,18 @@ func ExampleSlow() bool {
 func ExampleFast() bool {
 	return true
 }
+
+func ExampleOriginal() int {
+	const loopCount = 1000
+
+	sum := 0
+	for range loopCount {
+		sum++
+	}
+
+	return sum
+}
+
+func ExampleEnhanced() int {
+	return 1000
+}

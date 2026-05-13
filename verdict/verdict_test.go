@@ -8,8 +8,15 @@ import (
 )
 
 const (
-	benchmarkFoo = "Foo-8"
-	reasonSame   = "same"
+	benchmarkFoo             = "Foo-8"
+	reasonSame               = "same"
+	altMode                  = "alternatives"
+	reasonMalformedBenchmark = "malformed-benchmark"
+	reasonInsufficient       = "insufficient-samples"
+	rawAltInput              = "BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
+		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n" +
+		"BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
+		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n"
 )
 
 var (
@@ -619,6 +626,360 @@ func TestWriteTextMetricErrorFromReportContainsContext(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "writing text report") {
 		t.Fatalf("error = %q, want text output context", err.Error())
+	}
+}
+
+func TestParseAlternativesModeNewWins(t *testing.T) {
+	t.Parallel()
+
+	report, err := Parse(strings.NewReader(rawAltInput), Options{Mode: altMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.Benchmark != "BenchmarkEnhance" || got.Outcome != NewWins {
+		t.Fatalf("verdict = %+v, want BenchmarkEnhance new-wins", got)
+	}
+
+	if len(got.Metrics) != 3 {
+		t.Fatalf("metrics = %d, want 3", len(got.Metrics))
+	}
+}
+
+func TestParseAlternativesModeNestedNameAndCustomLabels(t *testing.T) {
+	t.Parallel()
+
+	input := `BenchmarkEnhance/group/base-10 100 12 ns/op
+BenchmarkEnhance/group/candidate-10 100 10 ns/op
+BenchmarkEnhance/group/base-10 100 12 ns/op
+BenchmarkEnhance/group/candidate-10 100 10 ns/op
+`
+
+	report, err := Parse(strings.NewReader(input), Options{
+		Mode:      altMode,
+		Baseline:  "base",
+		Candidate: "candidate",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.Benchmark != "BenchmarkEnhance/group" || got.Outcome != NewWins {
+		t.Fatalf("verdict = %+v, want nested new-wins", got)
+	}
+}
+
+func TestParseAlternativesModeTradeOff(t *testing.T) {
+	t.Parallel()
+
+	input := `BenchmarkEnhance/original-10 100 10 ns/op 8 B/op
+BenchmarkEnhance/enhanced-10 100 8 ns/op 16 B/op
+BenchmarkEnhance/original-10 100 10 ns/op 8 B/op
+BenchmarkEnhance/enhanced-10 100 8 ns/op 16 B/op
+`
+
+	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if report.Verdicts[0].Outcome != TradeOff {
+		t.Fatalf("outcome = %s, want %s", report.Verdicts[0].Outcome, TradeOff)
+	}
+}
+
+func TestParseAlternativesModeTie(t *testing.T) {
+	t.Parallel()
+
+	input := `BenchmarkEnhance/original-10 100 10 ns/op
+BenchmarkEnhance/enhanced-10 100 10 ns/op
+BenchmarkEnhance/original-10 100 10 ns/op
+BenchmarkEnhance/enhanced-10 100 10 ns/op
+`
+
+	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if report.Verdicts[0].Outcome != Tie {
+		t.Fatalf("outcome = %s, want %s", report.Verdicts[0].Outcome, Tie)
+	}
+}
+
+func TestParseAlternativesModeOldWins(t *testing.T) {
+	t.Parallel()
+
+	input := `BenchmarkEnhance/original-10 100 8 ns/op
+BenchmarkEnhance/enhanced-10 100 10 ns/op
+BenchmarkEnhance/original-10 100 8 ns/op
+BenchmarkEnhance/enhanced-10 100 10 ns/op
+`
+
+	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if report.Verdicts[0].Outcome != OldWins {
+		t.Fatalf("outcome = %s, want %s", report.Verdicts[0].Outcome, OldWins)
+	}
+}
+
+func TestParseAlternativesModeMissingBaseline(t *testing.T) {
+	t.Parallel()
+
+	input := `BenchmarkEnhance/enhanced-10 100 8 ns/op
+BenchmarkEnhance/enhanced-10 100 8 ns/op
+`
+
+	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.Outcome != Inconclusive || got.ReasonCode != "missing-baseline" {
+		t.Fatalf("verdict = %+v, want missing-baseline", got)
+	}
+}
+
+func TestParseAlternativesModeMissingCandidate(t *testing.T) {
+	t.Parallel()
+
+	input := `BenchmarkEnhance/original-10 100 8 ns/op
+BenchmarkEnhance/original-10 100 8 ns/op
+`
+
+	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.Outcome != Inconclusive || got.ReasonCode != "missing-candidate" {
+		t.Fatalf("verdict = %+v, want missing-candidate", got)
+	}
+}
+
+func TestParseAlternativesModeInsufficientSamples(t *testing.T) {
+	t.Parallel()
+
+	input := `BenchmarkEnhance/original-10 100 8 ns/op
+BenchmarkEnhance/enhanced-10 100 7 ns/op
+`
+
+	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.Outcome != Inconclusive || got.ReasonCode != reasonInsufficient {
+		t.Fatalf("verdict = %+v, want insufficient-samples", got)
+	}
+}
+
+func TestParseAlternativesModeUnsupportedMetric(t *testing.T) {
+	t.Parallel()
+
+	input := `BenchmarkEnhance/original-10 100 8 MB/s
+BenchmarkEnhance/enhanced-10 100 9 MB/s
+`
+
+	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.Outcome != Inconclusive || got.ReasonCode != "unsupported-metric" {
+		t.Fatalf("verdict = %+v, want unsupported-metric", got)
+	}
+}
+
+func TestParseAlternativesModeNoCommonMetric(t *testing.T) {
+	t.Parallel()
+
+	input := `BenchmarkEnhance/original-10 100 8 ns/op
+BenchmarkEnhance/enhanced-10 100 1 allocs/op
+BenchmarkEnhance/original-10 100 8 ns/op
+BenchmarkEnhance/enhanced-10 100 1 allocs/op
+`
+
+	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.Outcome != Inconclusive || got.ReasonCode != "unsupported-metric" {
+		t.Fatalf("verdict = %+v, want unsupported-metric", got)
+	}
+}
+
+func TestParseAlternativesModeMalformedBenchmark(t *testing.T) {
+	t.Parallel()
+
+	report, err := Parse(strings.NewReader("BenchmarkEnhance 100 8 ns/op\n"), Options{Mode: altMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.Outcome != Inconclusive || got.ReasonCode != reasonMalformedBenchmark {
+		t.Fatalf("verdict = %+v, want malformed-benchmark", got)
+	}
+}
+
+func TestParseAlternativesModeMalformedShortRow(t *testing.T) {
+	t.Parallel()
+
+	report, err := Parse(strings.NewReader("BenchmarkEnhance/original-10 100\n"), Options{Mode: altMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.Outcome != Inconclusive || got.ReasonCode != reasonMalformedBenchmark {
+		t.Fatalf("verdict = %+v, want malformed-benchmark", got)
+	}
+}
+
+func TestParseAlternativesModeMalformedIteration(t *testing.T) {
+	t.Parallel()
+
+	report, err := Parse(strings.NewReader("BenchmarkEnhance/original-10 nope 8 ns/op\n"), Options{Mode: altMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.Outcome != Inconclusive || got.ReasonCode != reasonMalformedBenchmark {
+		t.Fatalf("verdict = %+v, want malformed-benchmark", got)
+	}
+}
+
+func TestParseAlternativesModeNoBenchmarkRows(t *testing.T) {
+	t.Parallel()
+
+	report, err := Parse(strings.NewReader("PASS\n"), Options{Mode: altMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.Outcome != Inconclusive || got.ReasonCode != reasonMalformedBenchmark {
+		t.Fatalf("verdict = %+v, want malformed-benchmark", got)
+	}
+}
+
+func TestParseAlternativesModeSkipsUnrequestedLabels(t *testing.T) {
+	t.Parallel()
+
+	input := rawAltInput + "BenchmarkEnhance/control-10 100 1 ns/op\n"
+
+	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if report.Verdicts[0].Outcome != NewWins {
+		t.Fatalf("outcome = %s, want %s", report.Verdicts[0].Outcome, NewWins)
+	}
+}
+
+func TestParseAlternativesModeSortsMixedVerdicts(t *testing.T) {
+	t.Parallel()
+
+	input := `BenchmarkZ/original-10 100 10 ns/op
+BenchmarkZ/enhanced-10 100 8 ns/op
+BenchmarkZ/original-10 100 10 ns/op
+BenchmarkZ/enhanced-10 100 8 ns/op
+BenchmarkA/original-10 100 10 ns/op
+BenchmarkA/original-10 100 10 ns/op
+`
+
+	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if report.Verdicts[0].Benchmark != "BenchmarkA" || report.Verdicts[1].Benchmark != "BenchmarkZ" {
+		t.Fatalf("verdicts = %+v, want sorted mixed verdicts", report.Verdicts)
+	}
+}
+
+func TestParseAlternativesModeVariableSamplesUsePValueApproximation(t *testing.T) {
+	t.Parallel()
+
+	input := `BenchmarkEnhance/original-10 100 10 ns/op
+BenchmarkEnhance/enhanced-10 100 8 ns/op
+BenchmarkEnhance/original-10 100 12 ns/op
+BenchmarkEnhance/enhanced-10 100 9 ns/op
+`
+
+	report, err := Parse(strings.NewReader(input), Options{Mode: altMode, Alpha: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0].Metrics[0].PValue
+	if got <= 0 || got >= 1 {
+		t.Fatalf("p-value = %f, want normal approximation between 0 and 1", got)
+	}
+}
+
+func TestPrivateAlternativeBranches(t *testing.T) {
+	t.Parallel()
+
+	if got := trimCPUSuffix("BenchmarkFoo/original"); got != "BenchmarkFoo/original" {
+		t.Fatalf("name = %q, want no trim", got)
+	}
+
+	if got := trimCPUSuffix("BenchmarkFoo/original-fast"); got != "BenchmarkFoo/original-fast" {
+		t.Fatalf("name = %q, want no trim for non-numeric suffix", got)
+	}
+
+	if _, _, ok := splitRawBenchmarkName("BenchmarkFoo-10"); ok {
+		t.Fatal("benchmark without sub-benchmark should not split")
+	}
+
+	if metric, ok := normalizeRawMetric("MB/s"); ok || metric != "" {
+		t.Fatalf("metric = %q, ok = %v; want unsupported", metric, ok)
+	}
+}
+
+func TestPrivateAlternativeMathBranches(t *testing.T) {
+	t.Parallel()
+
+	metrics := parseRawMetrics([]string{"bad", metricNanosecondsPerOp, "10", metricNanosecondsPerOp})
+	if metrics[metricSecPerOp] != 10 {
+		t.Fatalf("metrics = %+v, want valid metric after bad value", metrics)
+	}
+
+	if got := variance([]float64{1}, 1); got != 0 {
+		t.Fatalf("variance = %f, want 0 for one sample", got)
+	}
+
+	if got := deltaPercent(0, 10); got != 0 {
+		t.Fatalf("delta = %f, want 0 for zero baseline", got)
+	}
+}
+
+func TestPrivateAlternativeEmptyReportBranches(t *testing.T) {
+	t.Parallel()
+
+	insufficientState := alternativeParseState{hasInsufficientRows: true}
+	if got := insufficientState.emptyAlternativeReport(); got.Verdicts[0].ReasonCode != reasonInsufficient {
+		t.Fatalf("report = %+v, want insufficient-samples", got)
+	}
+
+	emptyState := alternativeParseState{}
+	if got := emptyState.emptyAlternativeReport(); got.Verdicts[0].ReasonCode != reasonMalformedBenchmark {
+		t.Fatalf("report = %+v, want malformed-benchmark", got)
 	}
 }
 

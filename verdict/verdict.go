@@ -47,6 +47,9 @@ const (
 type Options struct {
 	Alpha       float64
 	MinDeltaPct float64
+	Mode        string
+	Baseline    string
+	Candidate   string
 }
 
 // Comparison is one parsed metric comparison for one benchmark.
@@ -90,6 +93,16 @@ type csvParseState struct {
 	hasBenchmarkSetMismatch bool
 }
 
+type alternativeSampleSet map[string]map[string]map[string][]float64
+
+type alternativeParseState struct {
+	samples             alternativeSampleSet
+	hasBenchmarkRows    bool
+	hasMalformedRows    bool
+	hasUnsupportedRows  bool
+	hasInsufficientRows bool
+}
+
 var (
 	deltaRe      = regexp.MustCompile(`([+-]\d+(?:\.\d+)?)%|\s~\s`)
 	pValueRe     = regexp.MustCompile(`\bp=([0-9]*\.?[0-9]+|n/a)\b`)
@@ -100,10 +113,22 @@ var (
 
 const (
 	defaultAlpha            = 0.05
+	defaultBaseline         = "original"
+	defaultCandidate        = "enhanced"
+	modeAlternatives        = "alternatives"
+	modeBenchstat           = "benchstat"
 	metricPattern           = `(?i)\b(?:sec/op|ns/op|time/op|b/op|bytes/op|allocs/op|[a-zµμ]+/op|[a-zµμ]+/s)\b`
+	metricNanosecondsPerOp  = "ns/op"
 	metricSecPerOp          = "sec/op"
+	metricBytesPerOp        = "B/op"
+	metricAllocsPerOp       = "allocs/op"
 	minimumComparisonFields = 2
 	benchmarkSplitCount     = 2
+	minimumSamples          = 2
+	rawBenchmarkMinFields   = 4
+	rawBenchmarkNameParts   = 2
+	rawBenchmarkValueUnit   = 2
+	percentScale            = 100
 )
 
 var (
@@ -117,9 +142,7 @@ var (
 
 // Parse reads benchstat output and returns a benchmark verdict report.
 func Parse(r io.Reader, opts Options) (Report, error) {
-	if opts.Alpha == 0 {
-		opts.Alpha = defaultAlpha
-	}
+	opts = normalizeOptions(opts)
 
 	input, err := io.ReadAll(r)
 	if err != nil {
@@ -127,11 +150,35 @@ func Parse(r io.Reader, opts Options) (Report, error) {
 	}
 
 	text := string(input)
+	if opts.Mode == modeAlternatives {
+		return parseAlternatives(text, opts), nil
+	}
+
 	if strings.Contains(text, ",vs base,P") {
 		return parseCSV(text, opts)
 	}
 
 	return parseText(text, opts)
+}
+
+func normalizeOptions(opts Options) Options {
+	if opts.Alpha == 0 {
+		opts.Alpha = defaultAlpha
+	}
+
+	if opts.Mode == "" {
+		opts.Mode = modeBenchstat
+	}
+
+	if opts.Baseline == "" {
+		opts.Baseline = defaultBaseline
+	}
+
+	if opts.Candidate == "" {
+		opts.Candidate = defaultCandidate
+	}
+
+	return opts
 }
 
 func parseText(input string, opts Options) (Report, error) {
@@ -220,6 +267,362 @@ func parseCSV(input string, opts Options) (Report, error) {
 	}
 
 	return evaluate(state.rows), nil
+}
+
+func parseAlternatives(input string, opts Options) Report {
+	state := newAlternativeParseState()
+
+	scanner := bufio.NewScanner(strings.NewReader(input))
+	for scanner.Scan() {
+		state.handleLine(scanner.Text())
+	}
+
+	if !state.hasBenchmarkRows {
+		return inconclusiveReport("malformed-benchmark")
+	}
+
+	report := state.evaluate(opts)
+	if len(report.Verdicts) == 0 {
+		return state.emptyAlternativeReport()
+	}
+
+	return report
+}
+
+func newAlternativeParseState() alternativeParseState {
+	return alternativeParseState{
+		samples: alternativeSampleSet{},
+	}
+}
+
+func (state *alternativeParseState) handleLine(line string) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "Benchmark") {
+		return
+	}
+
+	state.hasBenchmarkRows = true
+
+	sample, ok := parseRawBenchmarkLine(line)
+	if !ok {
+		state.hasMalformedRows = true
+
+		return
+	}
+
+	if len(sample.metrics) == 0 {
+		state.hasUnsupportedRows = true
+
+		return
+	}
+
+	state.addSample(sample)
+}
+
+func (state *alternativeParseState) addSample(sample rawBenchmarkSample) {
+	if _, ok := state.samples[sample.parent]; !ok {
+		state.samples[sample.parent] = map[string]map[string][]float64{}
+	}
+
+	if _, ok := state.samples[sample.parent][sample.label]; !ok {
+		state.samples[sample.parent][sample.label] = map[string][]float64{}
+	}
+
+	for metric, value := range sample.metrics {
+		state.samples[sample.parent][sample.label][metric] = append(
+			state.samples[sample.parent][sample.label][metric],
+			value,
+		)
+	}
+}
+
+type rawBenchmarkSample struct {
+	parent  string
+	label   string
+	metrics map[string]float64
+}
+
+func parseRawBenchmarkLine(line string) (rawBenchmarkSample, bool) {
+	fields := strings.Fields(line)
+	if len(fields) < rawBenchmarkMinFields {
+		return rawBenchmarkSample{}, false
+	}
+
+	if _, err := strconv.Atoi(fields[1]); err != nil {
+		return rawBenchmarkSample{}, false
+	}
+
+	parent, label, ok := splitRawBenchmarkName(fields[0])
+	if !ok || len(fields[2:])%rawBenchmarkValueUnit != 0 {
+		return rawBenchmarkSample{}, false
+	}
+
+	metrics := parseRawMetrics(fields[2:])
+
+	return rawBenchmarkSample{
+		parent:  parent,
+		label:   label,
+		metrics: metrics,
+	}, true
+}
+
+func splitRawBenchmarkName(name string) (string, string, bool) {
+	name = trimCPUSuffix(name)
+
+	parts := strings.Split(name, "/")
+	if len(parts) < rawBenchmarkNameParts {
+		return "", "", false
+	}
+
+	parent := strings.Join(parts[:len(parts)-1], "/")
+	label := parts[len(parts)-1]
+
+	return parent, label, parent != "" && label != ""
+}
+
+func trimCPUSuffix(name string) string {
+	index := strings.LastIndex(name, "-")
+	if index < 0 || index == len(name)-1 {
+		return name
+	}
+
+	if _, err := strconv.Atoi(name[index+1:]); err != nil {
+		return name
+	}
+
+	return name[:index]
+}
+
+func parseRawMetrics(fields []string) map[string]float64 {
+	metrics := map[string]float64{}
+
+	for index := 0; index+1 < len(fields); index += rawBenchmarkValueUnit {
+		value, err := strconv.ParseFloat(fields[index], 64)
+		if err != nil {
+			continue
+		}
+
+		metric, ok := normalizeRawMetric(fields[index+1])
+		if ok {
+			metrics[metric] = value
+		}
+	}
+
+	return metrics
+}
+
+func normalizeRawMetric(metric string) (string, bool) {
+	switch metric {
+	case metricNanosecondsPerOp:
+		return metricSecPerOp, true
+	case metricBytesPerOp:
+		return metricBytesPerOp, true
+	case metricAllocsPerOp:
+		return metricAllocsPerOp, true
+	default:
+		return "", false
+	}
+}
+
+func (state *alternativeParseState) evaluate(opts Options) Report {
+	parents := sortedAlternativeParents(state.samples)
+	verdicts := make([]BenchmarkVerdict, 0, len(parents))
+	rows := make([]Comparison, 0)
+
+	for _, parent := range parents {
+		parentRows, inconclusive := state.evaluateParent(parent, opts)
+		if inconclusive != nil {
+			verdicts = append(verdicts, *inconclusive)
+
+			continue
+		}
+
+		rows = append(rows, parentRows...)
+	}
+
+	if len(rows) > 0 {
+		verdicts = append(verdicts, evaluate(rows).Verdicts...)
+	}
+
+	sort.Slice(verdicts, func(i, j int) bool {
+		return verdicts[i].Benchmark < verdicts[j].Benchmark
+	})
+
+	return Report{Verdicts: verdicts}
+}
+
+func sortedAlternativeParents(samples alternativeSampleSet) []string {
+	parents := make([]string, 0, len(samples))
+	for parent := range samples {
+		parents = append(parents, parent)
+	}
+
+	sort.Strings(parents)
+
+	return parents
+}
+
+func (state *alternativeParseState) evaluateParent(parent string, opts Options) ([]Comparison, *BenchmarkVerdict) {
+	labels := state.samples[parent]
+	baselineMetrics, hasBaseline := labels[opts.Baseline]
+	candidateMetrics, hasCandidate := labels[opts.Candidate]
+
+	switch {
+	case !hasBaseline:
+		return nil, alternativeInconclusive(parent, "missing-baseline")
+	case !hasCandidate:
+		return nil, alternativeInconclusive(parent, "missing-candidate")
+	}
+
+	rows, ok := compareAlternativeMetrics(parent, baselineMetrics, candidateMetrics, opts)
+	if !ok {
+		state.hasInsufficientRows = true
+
+		return nil, alternativeInconclusive(parent, "insufficient-samples")
+	}
+
+	if len(rows) == 0 {
+		return nil, alternativeInconclusive(parent, "unsupported-metric")
+	}
+
+	return rows, nil
+}
+
+func compareAlternativeMetrics(
+	parent string,
+	baselineMetrics map[string][]float64,
+	candidateMetrics map[string][]float64,
+	opts Options,
+) ([]Comparison, bool) {
+	metrics := commonMetrics(baselineMetrics, candidateMetrics)
+	rows := make([]Comparison, 0, len(metrics))
+
+	for _, metric := range metrics {
+		baseline := baselineMetrics[metric]
+		candidate := candidateMetrics[metric]
+
+		if len(baseline) < minimumSamples || len(candidate) < minimumSamples {
+			return nil, false
+		}
+
+		rows = append(rows, compareAlternativeMetric(parent, metric, baseline, candidate, opts))
+	}
+
+	return rows, true
+}
+
+func commonMetrics(left, right map[string][]float64) []string {
+	metrics := make([]string, 0, len(left))
+	for metric := range left {
+		if _, ok := right[metric]; ok {
+			metrics = append(metrics, metric)
+		}
+	}
+
+	sort.Strings(metrics)
+
+	return metrics
+}
+
+func compareAlternativeMetric(
+	parent string,
+	metric string,
+	baseline []float64,
+	candidate []float64,
+	opts Options,
+) Comparison {
+	baselineMean := mean(baseline)
+	candidateMean := mean(candidate)
+	delta := deltaPercent(baselineMean, candidateMean)
+	pValue := pValueApproximation(baseline, candidate)
+	significant := pValue <= opts.Alpha && math.Abs(delta) >= opts.MinDeltaPct
+
+	return Comparison{
+		Benchmark:   parent,
+		Metric:      metric,
+		DeltaPct:    delta,
+		PValue:      pValue,
+		Significant: significant,
+		Direction:   classify(metric, delta, significant),
+	}
+}
+
+func mean(values []float64) float64 {
+	total := 0.0
+	for _, value := range values {
+		total += value
+	}
+
+	return total / float64(len(values))
+}
+
+func variance(values []float64, sampleMean float64) float64 {
+	if len(values) < minimumSamples {
+		return 0
+	}
+
+	sum := 0.0
+
+	for _, value := range values {
+		diff := value - sampleMean
+		sum += diff * diff
+	}
+
+	return sum / float64(len(values)-1)
+}
+
+func deltaPercent(baselineMean, candidateMean float64) float64 {
+	if baselineMean == 0 {
+		return 0
+	}
+
+	return ((candidateMean - baselineMean) / baselineMean) * percentScale
+}
+
+func pValueApproximation(baseline, candidate []float64) float64 {
+	baselineMean := mean(baseline)
+	candidateMean := mean(candidate)
+	baselineVariance := variance(baseline, baselineMean)
+	candidateVariance := variance(candidate, candidateMean)
+	standardError := math.Sqrt(
+		baselineVariance/float64(len(baseline)) +
+			candidateVariance/float64(len(candidate)),
+	)
+
+	if standardError == 0 {
+		if baselineMean == candidateMean {
+			return 1
+		}
+
+		return 0
+	}
+
+	zScore := math.Abs((candidateMean - baselineMean) / standardError)
+
+	return math.Erfc(zScore / math.Sqrt2)
+}
+
+func alternativeInconclusive(parent, reason string) *BenchmarkVerdict {
+	return &BenchmarkVerdict{
+		Benchmark:  parent,
+		Outcome:    Inconclusive,
+		Metrics:    nil,
+		Reason:     "inconclusive alternative input",
+		ReasonCode: reason,
+	}
+}
+
+func (state *alternativeParseState) emptyAlternativeReport() Report {
+	switch {
+	case state.hasMalformedRows:
+		return inconclusiveReport("malformed-benchmark")
+	case state.hasUnsupportedRows:
+		return inconclusiveReport("unsupported-metric")
+	case state.hasInsufficientRows:
+		return inconclusiveReport("insufficient-samples")
+	default:
+		return inconclusiveReport("malformed-benchmark")
+	}
 }
 
 func newCSVParseState() csvParseState {

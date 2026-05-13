@@ -12,10 +12,16 @@ import (
 
 const (
 	flagFormat   = "--format"
+	flagMode     = "--mode"
 	formatText   = "text"
 	formatJSON   = "json"
+	modeAlt      = "alternatives"
 	winningInput = "name          old time/op  new time/op  delta\n" +
 		"Foo-8         10.0ns ± 1%   8.0ns ± 1%  -20.00% (p=0.001 n=10+10)\n"
+	alternativesInput = "BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
+		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n" +
+		"BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
+		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n"
 )
 
 var errTestWrite = errors.New("test write error")
@@ -125,5 +131,54 @@ func TestRunCLIJSONWriteErrorContainsContext(t *testing.T) {
 	err := runCLI([]string{flagFormat, formatJSON}, strings.NewReader(winningInput), failingWriter{})
 	if !errors.Is(err, errWritingOutput) {
 		t.Fatalf("error = %v, want %v", err, errWritingOutput)
+	}
+}
+
+func TestRunCLIAlternativesMode(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := runCLI([]string{flagMode, modeAlt}, strings.NewReader(alternativesInput), &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(out.String(), "BenchmarkEnhance: new-wins") {
+		t.Fatalf("output = %q, want alternative verdict", out.String())
+	}
+}
+
+func TestRunCLIAlternativesModeWithCustomLabels(t *testing.T) {
+	t.Parallel()
+
+	input := strings.ReplaceAll(
+		strings.ReplaceAll(alternativesInput, "original", "base"),
+		"enhanced",
+		"candidate",
+	)
+
+	var out strings.Builder
+
+	err := runCLI(
+		[]string{flagMode, modeAlt, "--baseline", "base", "--candidate", "candidate"},
+		strings.NewReader(input),
+		&out,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(out.String(), "BenchmarkEnhance: new-wins") {
+		t.Fatalf("output = %q, want custom-label alternative verdict", out.String())
+	}
+}
+
+func TestRunCLIUnknownMode(t *testing.T) {
+	t.Parallel()
+
+	err := runCLI([]string{flagMode, "sideways"}, strings.NewReader(winningInput), &strings.Builder{})
+	if !errors.Is(err, errUnknownMode) {
+		t.Fatalf("error = %v, want %v", err, errUnknownMode)
 	}
 }

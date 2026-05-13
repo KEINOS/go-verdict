@@ -13,8 +13,11 @@ import (
 
 const (
 	alphaDefault       = 0.05
+	baselineDefault    = "original"
+	candidateDefault   = "enhanced"
 	formatDefault      = "text"
 	minDeltaPctDefault = 0.0
+	modeDefault        = "benchstat"
 )
 
 // Mockable variables for testing.
@@ -29,6 +32,7 @@ var (
 	errUnknownFormat = errors.New("unknown format")
 	errParsingInput  = errors.New("parsing input")
 	errParsingFlags  = errors.New("parsing flags")
+	errUnknownMode   = errors.New("unknown mode")
 	errWritingOutput = errors.New("writing output")
 )
 
@@ -41,7 +45,7 @@ func run() error {
 }
 
 func runCLI(args []string, input io.Reader, output io.Writer) error {
-	opts, outputFormat, err := initialize(args)
+	opts, cliOpts, err := initialize(args)
 	if err != nil {
 		return err
 	}
@@ -51,7 +55,11 @@ func runCLI(args []string, input io.Reader, output io.Writer) error {
 		return fmt.Errorf("%w: %w", errParsingInput, err)
 	}
 
-	return writeReport(report, outputFormat, output)
+	return writeReport(report, cliOpts.outputFormat, output)
+}
+
+type cliOptions struct {
+	outputFormat string
 }
 
 func writeReport(report verdict.Report, outputFormat string, output io.Writer) error {
@@ -73,16 +81,27 @@ func writeReport(report verdict.Report, outputFormat string, output io.Writer) e
 	return nil
 }
 
-func initialize(args []string) (*verdict.Options, string, error) {
+func initialize(args []string) (*verdict.Options, cliOptions, error) {
 	var opts verdict.Options
 
-	outputFormat := formatDefault
+	var cliOpts cliOptions
+
+	cliOpts.outputFormat = formatDefault
 	flagSet := flag.NewFlagSet("verdict", flag.ContinueOnError)
 	flagSet.SetOutput(io.Discard)
 
-	flagSet.StringVar(&outputFormat,
+	flagSet.StringVar(&cliOpts.outputFormat,
 		"format", formatDefault,
 		"output format: text or json")
+	flagSet.StringVar(&opts.Mode,
+		"mode", modeDefault,
+		"input mode: benchstat or alternatives")
+	flagSet.StringVar(&opts.Baseline,
+		"baseline", baselineDefault,
+		"baseline sub-benchmark name for alternatives mode")
+	flagSet.StringVar(&opts.Candidate,
+		"candidate", candidateDefault,
+		"candidate sub-benchmark name for alternatives mode")
 	flagSet.Float64Var(&opts.Alpha,
 		"alpha", alphaDefault,
 		"p-value threshold")
@@ -92,10 +111,14 @@ func initialize(args []string) (*verdict.Options, string, error) {
 
 	err := flagSet.Parse(args)
 	if err != nil {
-		return nil, "", fmt.Errorf("%w: %w", errParsingFlags, err)
+		return nil, cliOptions{}, fmt.Errorf("%w: %w", errParsingFlags, err)
 	}
 
-	return &opts, outputFormat, nil
+	if opts.Mode != modeDefault && opts.Mode != "alternatives" {
+		return nil, cliOptions{}, errUnknownMode
+	}
+
+	return &opts, cliOpts, nil
 }
 
 func exitOnError(err error) {

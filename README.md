@@ -1,6 +1,19 @@
 # go-verdict
 
-`go-verdict` reads Go benchmark comparison output from `benchstat` and gives a simple verdict.
+`verdict` command is a simple comparison tool for Go benchmarks. It reads the benchmark results from standard input and gives a simple verdict.
+
+```sh
+benchstat old.txt new.txt | verdict
+```
+
+```sh
+% go test -run='^$' -bench=BenchmarkEnhance -benchmem -count=8 ./testdata | verdict --mode alternatives
+BenchmarkEnhance: new-wins
+  new is Pareto-superior: at least one significant improvement and no significant regressions
+  = B/op          0.00% p=1 same
+  = allocs/op     0.00% p=1 same
+  + sec/op      -99.33% p=0 improved
+```
 
 It is useful when you want a clear answer after changing code:
 
@@ -10,12 +23,11 @@ It is useful when you want a clear answer after changing code:
 - Is there a trade-off between metrics?
 - Is an alternative function better than the original function before making a PR?
 
-The command reads from standard input and writes either text or JSON.
-
 ## Features
 
 - Supports modern `benchstat` CSV-style output.
 - Supports text `benchstat` output that includes `p=`.
+- Supports raw `go test -bench` output for local alternative comparison.
 - Uses both statistical significance and a practical delta threshold.
 - Handles lower-is-better metrics such as `sec/op`, `ns/op`, `B/op`, and `allocs/op`.
 - Handles higher-is-better metrics such as `MB/s`, `ops/s`, and other `/s` rates.
@@ -23,7 +35,7 @@ The command reads from standard input and writes either text or JSON.
 
 ## Workflows
 
-`go-verdict` is designed around two comparison workflows.
+`verdict` is designed around two comparison workflows.
 
 ### PR Comparison
 
@@ -49,7 +61,7 @@ benchstat old.txt new.txt | verdict
 
 ### Local Alternative Comparison
 
-This planned workflow is for quick PoC work before a PR. Use it when the original and alternative implementations can be benchmarked in the same test file.
+Use this workflow for quick PoC work before a PR. Use it when the original and alternative implementations can be benchmarked in the same test file.
 
 Example benchmark:
 
@@ -81,7 +93,7 @@ Then compare the two sub-benchmarks:
 verdict --mode alternatives --baseline original --candidate enhanced < alternatives.txt
 ```
 
-The alternative mode will group sub-benchmarks by their parent benchmark. For example, `BenchmarkEnhance/original-10` and `BenchmarkEnhance/enhanced-10` are compared as one pair under `BenchmarkEnhance`.
+The alternative mode groups sub-benchmarks by their parent benchmark. For example, `BenchmarkEnhance/original-10` and `BenchmarkEnhance/enhanced-10` are compared as one pair under `BenchmarkEnhance`.
 
 The outcome meaning is from the candidate point of view:
 
@@ -93,7 +105,7 @@ The outcome meaning is from the candidate point of view:
 | `trade-off` | Some metrics improved, but other metrics regressed. |
 | `inconclusive` | The input does not contain enough comparable samples. |
 
-Alternative mode should support `ns/op`, `B/op`, and `allocs/op` from raw `go test` output. It should compute deltas and p-values from repeated samples, then apply the same `--alpha`, `--min-delta`, and verdict rules as PR comparison. It should require repeated samples from `-count=N`; if there are not enough samples to compare, it should return `inconclusive`.
+Alternative mode supports `ns/op`, `B/op`, and `allocs/op` from raw `go test` output. It computes deltas and p-values from repeated samples, then applies the same `--alpha`, `--min-delta`, and verdict rules as PR comparison. It requires repeated samples from `-count=N`; if there are not enough samples to compare, it returns `inconclusive`.
 
 ## Requirements
 
@@ -183,13 +195,13 @@ Example JSON:
     Output format. Default: text.
 
 --mode benchstat|alternatives
-    Input mode. Default: benchstat. The alternatives mode is planned.
+    Input mode. Default: benchstat.
 
 --baseline name
-    Baseline sub-benchmark name for alternatives mode. Planned default: original.
+    Baseline sub-benchmark name for alternatives mode. Default: original.
 
 --candidate name
-    Candidate sub-benchmark name for alternatives mode. Planned default: enhanced.
+    Candidate sub-benchmark name for alternatives mode. Default: enhanced.
 
 --alpha value
     P-value threshold for statistical significance. Default: 0.05.
@@ -236,6 +248,11 @@ Known reason codes include:
 | --- | --- |
 | `missing-pvalue` | The comparison does not include a p-value. |
 | `benchmark-set-mismatch` | The old and new benchmark sets are different. |
+| `missing-baseline` | Alternative mode did not find the baseline sub-benchmark. |
+| `missing-candidate` | Alternative mode did not find the candidate sub-benchmark. |
+| `insufficient-samples` | Alternative mode found too few repeated samples. |
+| `unsupported-metric` | Alternative mode did not find supported metrics to compare. |
+| `malformed-benchmark` | Alternative mode could not parse the raw benchmark rows. |
 
 ## Library Usage
 
