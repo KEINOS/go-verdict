@@ -35,15 +35,19 @@ data-alternatives:
 e2e: e2e-benchstat e2e-alternatives
 
 e2e-benchstat: build data-benchstat-repeat-fast
-	@printf '\n== Run benchstat-mode E2E: repeated BenchmarkExampleFast checks old/new benchstat parsing, not Fast vs Slow speed ==\n'
+	@printf '\n== Run auto benchstat E2E: repeated BenchmarkExampleFast checks old/new benchstat parsing, not Fast vs Slow speed ==\n'
 	$(VERDICT) --format text < ./testdata/benchstat_E2E.txt | tee ./testdata/verdict_text_E2E.txt
+	$(VERDICT) --verbose --format text < ./testdata/benchstat_E2E.txt | tee ./testdata/verdict_verbose_text_E2E.txt
 	$(VERDICT) --format json < ./testdata/benchstat_E2E.txt | tee ./testdata/verdict_json_E2E.txt
-	grep -q 'ExampleFast-10:' ./testdata/verdict_text_E2E.txt
+	grep -Eq 'ExampleFast-10: (tie|bench_(old|new)\.txt wins)' ./testdata/verdict_text_E2E.txt
+	grep -Eq '(no statistically significant practical difference|Pareto-superior)' ./testdata/verdict_verbose_text_E2E.txt
 	grep -q '"benchmark": "ExampleFast-10"' ./testdata/verdict_json_E2E.txt
 
 e2e-alternatives: build data-alternatives
-	@printf '\n== Run alternatives-mode E2E: BenchmarkEnhance/original vs BenchmarkEnhance/enhanced checks local PoC comparison ==\n'
-	$(VERDICT) --mode alternatives --format text < ./testdata/bench_alternatives.txt | tee ./testdata/verdict_alternatives_text_E2E.txt
-	$(VERDICT) --mode alternatives --format json < ./testdata/bench_alternatives.txt | tee ./testdata/verdict_alternatives_json_E2E.txt
-	grep -q 'BenchmarkEnhance:' ./testdata/verdict_alternatives_text_E2E.txt
+	@printf '\n== Run auto alternatives E2E: BenchmarkEnhance/original vs BenchmarkEnhance/enhanced checks local PoC comparison ==\n'
+	$(VERDICT) --format text < ./testdata/bench_alternatives.txt | tee ./testdata/verdict_alternatives_text_E2E.txt
+	$(VERDICT) --verbose --format text < ./testdata/bench_alternatives.txt | tee ./testdata/verdict_alternatives_verbose_text_E2E.txt
+	$(VERDICT) --format json < ./testdata/bench_alternatives.txt | tee ./testdata/verdict_alternatives_json_E2E.txt
+	grep -q 'BenchmarkEnhance: enhanced wins' ./testdata/verdict_alternatives_text_E2E.txt
+	grep -q 'Pareto-superior' ./testdata/verdict_alternatives_verbose_text_E2E.txt
 	grep -q '"benchmark": "BenchmarkEnhance"' ./testdata/verdict_alternatives_json_E2E.txt

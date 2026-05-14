@@ -7,12 +7,8 @@ benchstat old.txt new.txt | verdict
 ```
 
 ```sh
-% go test -run='^$' -bench=BenchmarkEnhance -benchmem -count=8 ./testdata | verdict --mode alternatives
-BenchmarkEnhance: new-wins
-  new is Pareto-superior: at least one significant improvement and no significant regressions
-  = B/op          0.00% p=1 same
-  = allocs/op     0.00% p=1 same
-  + sec/op      -99.33% p=0 improved
+% go test -run='^$' -bench=BenchmarkEnhance -benchmem -count=8 ./testdata | verdict
+BenchmarkEnhance: enhanced wins
 ```
 
 It is useful when you want a clear answer after changing code:
@@ -27,7 +23,8 @@ It is useful when you want a clear answer after changing code:
 
 - Supports modern `benchstat` CSV-style output.
 - Supports text `benchstat` output that includes `p=`.
-- Supports raw `go test -bench` output for local alternative comparison.
+- Auto-detects raw `go test -bench` output for local alternative comparison.
+- Prints one concise verdict line by default, with details available via `--verbose`.
 - Uses both statistical significance and a practical delta threshold.
 - Handles lower-is-better metrics such as `sec/op`, `ns/op`, `B/op`, and `allocs/op`.
 - Handles higher-is-better metrics such as `MB/s`, `ops/s`, and other `/s` rates.
@@ -57,6 +54,12 @@ Compare them with `benchstat`, then pipe the result to `verdict`:
 
 ```sh
 benchstat old.txt new.txt | verdict
+```
+
+If one side wins, `verdict` uses the file labels from the `benchstat` header:
+
+```text
+ExampleFast-10: new.txt wins
 ```
 
 ### Local Alternative Comparison
@@ -90,10 +93,16 @@ go test -run='^$' -bench='BenchmarkEnhance' -benchmem -count=20 > alternatives.t
 Then compare the two sub-benchmarks:
 
 ```sh
-verdict --mode alternatives --baseline original --candidate enhanced < alternatives.txt
+verdict < alternatives.txt
 ```
 
-The alternative mode groups sub-benchmarks by their parent benchmark. For example, `BenchmarkEnhance/original-10` and `BenchmarkEnhance/enhanced-10` are compared as one pair under `BenchmarkEnhance`.
+Auto mode groups exactly two sub-benchmarks by their parent benchmark. For example, `BenchmarkEnhance/original-10` and `BenchmarkEnhance/enhanced-10` are compared as one pair under `BenchmarkEnhance`.
+
+Use explicit labels when the raw benchmark output has more than two alternatives or non-default names:
+
+```sh
+verdict --mode alternatives --baseline original --candidate enhanced < alternatives.txt
+```
 
 The outcome meaning is from the candidate point of view:
 
@@ -105,7 +114,7 @@ The outcome meaning is from the candidate point of view:
 | `trade-off` | Some metrics improved, but other metrics regressed. |
 | `inconclusive` | The input does not contain enough comparable samples. |
 
-Alternative mode supports `ns/op`, `B/op`, and `allocs/op` from raw `go test` output. It computes deltas and p-values from repeated samples, then applies the same `--alpha`, `--min-delta`, and verdict rules as PR comparison. It requires repeated samples from `-count=N`; if there are not enough samples to compare, it returns `inconclusive`.
+Raw benchmark comparison supports `ns/op`, `B/op`, and `allocs/op` from `go test` output. It computes deltas and p-values from repeated samples, then applies the same `--alpha`, `--min-delta`, and verdict rules as PR comparison. It requires repeated samples from `-count=N`; if there are not enough samples to compare, it returns `inconclusive`.
 
 ## Requirements
 
@@ -146,8 +155,6 @@ Example output:
 
 ```text
 ExampleFast-10: tie
-  no statistically significant practical difference
-  = sec/op        0.00% p=0.68 same
 ```
 
 ## Output Formats
@@ -156,6 +163,12 @@ Text output is the default:
 
 ```sh
 benchstat old.txt new.txt | verdict --format text
+```
+
+Verbose text output includes the reason and metric-level details:
+
+```sh
+benchstat old.txt new.txt | verdict --verbose
 ```
 
 JSON output is useful for CI, tools, and scripts:
@@ -172,6 +185,8 @@ Example JSON:
     {
       "benchmark": "ExampleFast-10",
       "outcome": "tie",
+      "baseline_label": "old.txt",
+      "candidate_label": "new.txt",
       "metrics": [
         {
           "benchmark": "ExampleFast-10",
@@ -194,14 +209,17 @@ Example JSON:
 --format text|json
     Output format. Default: text.
 
---mode benchstat|alternatives
-    Input mode. Default: benchstat.
+--mode auto|benchstat|alternatives
+    Input mode. Default: auto.
+
+--verbose
+    Include verdict reason and metric details in text output.
 
 --baseline name
-    Baseline sub-benchmark name for alternatives mode. Default: original.
+    Baseline sub-benchmark name for alternatives mode.
 
 --candidate name
-    Candidate sub-benchmark name for alternatives mode. Default: enhanced.
+    Candidate sub-benchmark name for alternatives mode.
 
 --alpha value
     P-value threshold for statistical significance. Default: 0.05.

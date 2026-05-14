@@ -9,6 +9,10 @@ import (
 
 const (
 	benchmarkFoo             = "Foo-8"
+	labelCandidate           = "candidate"
+	labelNew                 = "new"
+	labelNewTxt              = "new.txt"
+	labelOld                 = "old"
 	reasonSame               = "same"
 	altMode                  = "alternatives"
 	reasonMalformedBenchmark = "malformed-benchmark"
@@ -46,7 +50,7 @@ pkg: example.com/foo
 cpu: Apple M4
 ,old.txt,,new.txt,,,
 ,sec/op,CI,sec/op,CI,vs base,P
-Foo-8,1.0e-08,1%,8.0e-09,1%,-20.00%,0.001
+Foo-8,1.0e-08,1%,8.0e-09,1%,-20.00%,p=0.001 n=10
 `
 
 	report, err := Parse(strings.NewReader(input), Options{Alpha: 0.05, MinDeltaPct: 0})
@@ -60,6 +64,54 @@ Foo-8,1.0e-08,1%,8.0e-09,1%,-20.00%,0.001
 
 	if report.Verdicts[0].Outcome != NewWins {
 		t.Fatalf("outcome = %s, want %s", report.Verdicts[0].Outcome, NewWins)
+	}
+
+	if report.Verdicts[0].Winner != labelNewTxt {
+		t.Fatalf("winner = %q, want %q", report.Verdicts[0].Winner, labelNewTxt)
+	}
+}
+
+func TestParseTextFormatCapturesBenchstatLabels(t *testing.T) {
+	t.Parallel()
+
+	input := `goos: darwin
+goarch: arm64
+pkg: example.com/foo
+cpu: Apple M4
+        │ ./testdata/bench_old.txt │     ./testdata/bench_new.txt      │
+        │          sec/op          │   sec/op     vs base              │
+Foo-8              10.0n ± 1%             8.0n ± 1%  -20.00% (p=0.001 n=10)
+`
+
+	report, err := Parse(strings.NewReader(input), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.BaselineLabel != "bench_old.txt" || got.CandidateLabel != "bench_new.txt" {
+		t.Fatalf("labels = %q/%q, want bench_old.txt/bench_new.txt", got.BaselineLabel, got.CandidateLabel)
+	}
+
+	if got.Winner != "bench_new.txt" {
+		t.Fatalf("winner = %q, want bench_new.txt", got.Winner)
+	}
+}
+
+func TestParseExplicitBenchstatMode(t *testing.T) {
+	t.Parallel()
+
+	input := `name          old time/op  new time/op  delta
+Foo-8         10.0ns ± 1%   8.0ns ± 1%  -20.00% (p=0.001 n=10+10)
+`
+
+	report, err := Parse(strings.NewReader(input), Options{Mode: modeBenchstat})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if report.Verdicts[0].Winner != labelNew {
+		t.Fatalf("winner = %q, want new", report.Verdicts[0].Winner)
 	}
 }
 
@@ -427,7 +479,7 @@ func TestWriteTextIncludesReasonCodeAndAllMetricMarks(t *testing.T) {
 	}
 
 	var output strings.Builder
-	if err := report.WriteText(&output); err != nil {
+	if err := report.WriteVerboseText(&output); err != nil {
 		t.Fatal(err)
 	}
 
@@ -436,6 +488,27 @@ func TestWriteTextIncludesReasonCodeAndAllMetricMarks(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output = %q, want %q", got, want)
 		}
+	}
+}
+
+func TestWriteTextUsesConciseHumanWinner(t *testing.T) {
+	t.Parallel()
+
+	report := Report{
+		Verdicts: []BenchmarkVerdict{
+			{Benchmark: benchmarkFoo, Outcome: NewWins, CandidateLabel: labelNewTxt, Winner: labelNewTxt, Reason: "wins"},
+			{Benchmark: "Bar-8", Outcome: Tie, Reason: reasonSame},
+		},
+	}
+
+	var output strings.Builder
+	if err := report.WriteText(&output); err != nil {
+		t.Fatal(err)
+	}
+
+	want := "Foo-8: new.txt wins\nBar-8: tie\n"
+	if output.String() != want {
+		t.Fatalf("output = %q, want %q", output.String(), want)
 	}
 }
 
@@ -477,7 +550,7 @@ func TestWriteTextReasonErrorContainsContext(t *testing.T) {
 		Verdicts: []BenchmarkVerdict{{Benchmark: benchmarkFoo, Outcome: Tie, Reason: reasonSame}},
 	}
 
-	err := report.WriteText(&writer)
+	err := report.WriteVerboseText(&writer)
 	if err == nil {
 		t.Fatal("expected reason write error")
 	}
@@ -594,7 +667,7 @@ func TestWriteTextReasonCodeErrorContainsContext(t *testing.T) {
 		Verdicts: []BenchmarkVerdict{{Benchmark: benchmarkFoo, Outcome: Tie, Reason: reasonSame, ReasonCode: "example"}},
 	}
 
-	err := report.WriteText(&writer)
+	err := report.WriteVerboseText(&writer)
 	if err == nil {
 		t.Fatal("expected reason code write error")
 	}
@@ -619,7 +692,7 @@ func TestWriteTextMetricErrorFromReportContainsContext(t *testing.T) {
 		},
 	}
 
-	err := report.WriteText(&writer)
+	err := report.WriteVerboseText(&writer)
 	if err == nil {
 		t.Fatal("expected metric write error")
 	}
@@ -645,6 +718,66 @@ func TestParseAlternativesModeNewWins(t *testing.T) {
 	if len(got.Metrics) != 3 {
 		t.Fatalf("metrics = %d, want 3", len(got.Metrics))
 	}
+
+	if got.Winner != "enhanced" {
+		t.Fatalf("winner = %q, want enhanced", got.Winner)
+	}
+}
+
+func TestParseAutoModeRawAlternativesInfersLabels(t *testing.T) {
+	t.Parallel()
+
+	report, err := Parse(strings.NewReader(rawAltInput), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.Benchmark != "BenchmarkEnhance" || got.Winner != "enhanced" {
+		t.Fatalf("verdict = %+v, want BenchmarkEnhance enhanced winner", got)
+	}
+}
+
+func TestParseAutoModeRawAlternativesInfersNonDefaultLabels(t *testing.T) {
+	t.Parallel()
+
+	input := `BenchmarkEnhance/base-10 100 10 ns/op
+BenchmarkEnhance/candidate-10 100 8 ns/op
+BenchmarkEnhance/base-10 100 10 ns/op
+BenchmarkEnhance/candidate-10 100 8 ns/op
+`
+
+	report, err := Parse(strings.NewReader(input), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.BaselineLabel != "base" || got.CandidateLabel != labelCandidate || got.Winner != labelCandidate {
+		t.Fatalf("verdict = %+v, want base/candidate labels with candidate winner", got)
+	}
+}
+
+func TestParseAutoModeRawAlternativesRejectsAmbiguousLabels(t *testing.T) {
+	t.Parallel()
+
+	input := `BenchmarkEnhance/a-10 100 10 ns/op
+BenchmarkEnhance/b-10 100 8 ns/op
+BenchmarkEnhance/c-10 100 8 ns/op
+BenchmarkEnhance/a-10 100 10 ns/op
+BenchmarkEnhance/b-10 100 8 ns/op
+BenchmarkEnhance/c-10 100 8 ns/op
+`
+
+	report, err := Parse(strings.NewReader(input), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.Outcome != Inconclusive || got.ReasonCode != "ambiguous-alternatives" {
+		t.Fatalf("verdict = %+v, want ambiguous-alternatives", got)
+	}
 }
 
 func TestParseAlternativesModeNestedNameAndCustomLabels(t *testing.T) {
@@ -659,7 +792,7 @@ BenchmarkEnhance/group/candidate-10 100 10 ns/op
 	report, err := Parse(strings.NewReader(input), Options{
 		Mode:      altMode,
 		Baseline:  "base",
-		Candidate: "candidate",
+		Candidate: labelCandidate,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -980,6 +1113,91 @@ func TestPrivateAlternativeEmptyReportBranches(t *testing.T) {
 	emptyState := alternativeParseState{}
 	if got := emptyState.emptyAlternativeReport(); got.Verdicts[0].ReasonCode != reasonMalformedBenchmark {
 		t.Fatalf("report = %+v, want malformed-benchmark", got)
+	}
+}
+
+func TestPrivateTextLabelBranches(t *testing.T) {
+	t.Parallel()
+
+	textState := textParseState{baselineLabel: "already", candidateLabel: "set"}
+	textState.captureLabels("│ old.txt │ new.txt │")
+
+	if textState.baselineLabel != "already" || textState.candidateLabel != "set" {
+		t.Fatalf("labels = %q/%q, want unchanged", textState.baselineLabel, textState.candidateLabel)
+	}
+
+	emptyTextState := textParseState{}
+	emptyTextState.captureLabels("│ sec/op │ sec/op vs base │")
+
+	if emptyTextState.baselineLabel != "" || emptyTextState.candidateLabel != "" {
+		t.Fatalf("metric labels = %q/%q, want empty", emptyTextState.baselineLabel, emptyTextState.candidateLabel)
+	}
+
+	if _, ok := parseBenchstatTextLabels("│ sec/op │ sec/op vs base │"); ok {
+		t.Fatal("metric header should not parse as labels")
+	}
+}
+
+func TestPrivateCSVLabelBranches(t *testing.T) {
+	t.Parallel()
+
+	csvState := csvParseState{}
+	csvState.captureLabels([]string{"", "sec/op", "CI", "sec/op", "CI", "vs base", "P"})
+	csvState.captureLabels([]string{"", "", "", labelNewTxt})
+
+	if csvState.baselineLabel != "" || csvState.candidateLabel != "" {
+		t.Fatalf("csv labels = %q/%q, want empty", csvState.baselineLabel, csvState.candidateLabel)
+	}
+
+	if got := csvState.displayBaselineLabel(); got != labelOld {
+		t.Fatalf("baseline label = %q, want old", got)
+	}
+
+	if got := csvState.displayCandidateLabel(); got != labelNew {
+		t.Fatalf("candidate label = %q, want new", got)
+	}
+}
+
+func TestPrivateDisplayLabelBranches(t *testing.T) {
+	t.Parallel()
+
+	if got := displayLabel(""); got != "" {
+		t.Fatalf("empty label = %q, want empty", got)
+	}
+
+	if got := displayLabel("."); got != "." {
+		t.Fatalf("dot label = %q, want dot", got)
+	}
+
+	baselineLabel, candidateLabel := comparisonLabels([]Comparison{{}})
+	if baselineLabel != labelOld || candidateLabel != labelNew {
+		t.Fatalf("blank comparison labels = %q/%q, want old/new", baselineLabel, candidateLabel)
+	}
+
+	baselineLabel, candidateLabel = comparisonLabels(nil)
+	if baselineLabel != labelOld || candidateLabel != labelNew {
+		t.Fatalf("empty comparison labels = %q/%q, want old/new", baselineLabel, candidateLabel)
+	}
+
+	if got := winnerLabel(Outcome("unknown"), labelOld, labelNew); got != "" {
+		t.Fatalf("unknown outcome winner = %q, want empty", got)
+	}
+}
+
+func TestWriteVerboseTextHeaderErrorContainsContext(t *testing.T) {
+	t.Parallel()
+
+	report := Report{
+		Verdicts: []BenchmarkVerdict{{Benchmark: benchmarkFoo, Outcome: Tie, Reason: reasonSame}},
+	}
+
+	err := report.WriteVerboseText(failingWriter{})
+	if err == nil {
+		t.Fatal("expected header write error")
+	}
+
+	if !strings.Contains(err.Error(), "writing text report") {
+		t.Fatalf("error = %q, want text output context", err.Error())
 	}
 }
 

@@ -13,11 +13,9 @@ import (
 
 const (
 	alphaDefault       = 0.05
-	baselineDefault    = "original"
-	candidateDefault   = "enhanced"
 	formatDefault      = "text"
 	minDeltaPctDefault = 0.0
-	modeDefault        = "benchstat"
+	modeDefault        = "auto"
 )
 
 // Mockable variables for testing.
@@ -55,17 +53,23 @@ func runCLI(args []string, input io.Reader, output io.Writer) error {
 		return fmt.Errorf("%w: %w", errParsingInput, err)
 	}
 
-	return writeReport(report, cliOpts.outputFormat, output)
+	return writeReport(report, cliOpts, output)
 }
 
 type cliOptions struct {
 	outputFormat string
+	verbose      bool
 }
 
-func writeReport(report verdict.Report, outputFormat string, output io.Writer) error {
-	switch outputFormat {
+func writeReport(report verdict.Report, cliOpts cliOptions, output io.Writer) error {
+	switch cliOpts.outputFormat {
 	case formatDefault:
-		err := report.WriteText(output)
+		write := report.WriteText
+		if cliOpts.verbose {
+			write = report.WriteVerboseText
+		}
+
+		err := write(output)
 		if err != nil {
 			return fmt.Errorf("%w: %w", errWritingOutput, err)
 		}
@@ -95,12 +99,12 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 		"output format: text or json")
 	flagSet.StringVar(&opts.Mode,
 		"mode", modeDefault,
-		"input mode: benchstat or alternatives")
+		"input mode: auto, benchstat, or alternatives")
 	flagSet.StringVar(&opts.Baseline,
-		"baseline", baselineDefault,
+		"baseline", "",
 		"baseline sub-benchmark name for alternatives mode")
 	flagSet.StringVar(&opts.Candidate,
-		"candidate", candidateDefault,
+		"candidate", "",
 		"candidate sub-benchmark name for alternatives mode")
 	flagSet.Float64Var(&opts.Alpha,
 		"alpha", alphaDefault,
@@ -108,13 +112,16 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 	flagSet.Float64Var(&opts.MinDeltaPct,
 		"min-delta", minDeltaPctDefault,
 		"minimum absolute delta percentage treated as practical difference")
+	flagSet.BoolVar(&cliOpts.verbose,
+		"verbose", false,
+		"include verdict reason and metric details in text output")
 
 	err := flagSet.Parse(args)
 	if err != nil {
 		return nil, cliOptions{}, fmt.Errorf("%w: %w", errParsingFlags, err)
 	}
 
-	if opts.Mode != modeDefault && opts.Mode != "alternatives" {
+	if opts.Mode != modeDefault && opts.Mode != "benchstat" && opts.Mode != "alternatives" {
 		return nil, cliOptions{}, errUnknownMode
 	}
 

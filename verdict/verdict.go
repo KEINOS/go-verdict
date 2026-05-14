@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -54,21 +55,26 @@ type Options struct {
 
 // Comparison is one parsed metric comparison for one benchmark.
 type Comparison struct {
-	Benchmark   string    `json:"benchmark"`
-	Metric      string    `json:"metric"`
-	DeltaPct    float64   `json:"delta_pct"`
-	PValue      float64   `json:"p_value"`
-	Significant bool      `json:"significant"`
-	Direction   Direction `json:"direction"`
+	Benchmark      string    `json:"benchmark"`
+	Metric         string    `json:"metric"`
+	DeltaPct       float64   `json:"delta_pct"`
+	PValue         float64   `json:"p_value"`
+	Significant    bool      `json:"significant"`
+	Direction      Direction `json:"direction"`
+	BaselineLabel  string    `json:"-"`
+	CandidateLabel string    `json:"-"`
 }
 
 // BenchmarkVerdict is the final outcome for one benchmark name.
 type BenchmarkVerdict struct {
-	Benchmark  string       `json:"benchmark"`
-	Outcome    Outcome      `json:"outcome"`
-	Metrics    []Comparison `json:"metrics"`
-	Reason     string       `json:"reason"`
-	ReasonCode string       `json:"reason_code,omitempty"`
+	Benchmark      string       `json:"benchmark"`
+	Outcome        Outcome      `json:"outcome"`
+	Winner         string       `json:"winner,omitempty"`
+	BaselineLabel  string       `json:"baseline_label,omitempty"`
+	CandidateLabel string       `json:"candidate_label,omitempty"`
+	Metrics        []Comparison `json:"metrics"`
+	Reason         string       `json:"reason"`
+	ReasonCode     string       `json:"reason_code,omitempty"`
 }
 
 // Report is the complete parse and evaluation result.
@@ -79,12 +85,16 @@ type Report struct {
 type textParseState struct {
 	rows                      []Comparison
 	currentMetric             string
+	baselineLabel             string
+	candidateLabel            string
 	hasComparisonRowsWithoutP bool
 }
 
 type csvParseState struct {
 	rows                    []Comparison
 	metric                  string
+	baselineLabel           string
+	candidateLabel          string
 	deltaIndex              int
 	pValueIndex             int
 	baseIndex               int
@@ -115,6 +125,9 @@ const (
 	defaultAlpha            = 0.05
 	defaultBaseline         = "original"
 	defaultCandidate        = "enhanced"
+	fallbackBaselineLabel   = "old"
+	fallbackCandidateLabel  = "new"
+	modeAuto                = "auto"
 	modeAlternatives        = "alternatives"
 	modeBenchstat           = "benchstat"
 	metricPattern           = `(?i)\b(?:sec/op|ns/op|time/op|b/op|bytes/op|allocs/op|[a-zµμ]+/op|[a-zµμ]+/s)\b`
@@ -123,6 +136,7 @@ const (
 	metricBytesPerOp        = "B/op"
 	metricAllocsPerOp       = "allocs/op"
 	minimumComparisonFields = 2
+	requiredAlternativePair = 2
 	benchmarkSplitCount     = 2
 	minimumSamples          = 2
 	rawBenchmarkMinFields   = 4
@@ -150,10 +164,22 @@ func Parse(r io.Reader, opts Options) (Report, error) {
 	}
 
 	text := string(input)
-	if opts.Mode == modeAlternatives {
-		return parseAlternatives(text, opts), nil
-	}
 
+	switch opts.Mode {
+	case modeAlternatives:
+		return parseAlternatives(text, opts), nil
+	case modeBenchstat:
+		return parseBenchstat(text, opts)
+	default:
+		if looksLikeRawBenchmarkInput(text) {
+			return parseAlternatives(text, opts), nil
+		}
+
+		return parseBenchstat(text, opts)
+	}
+}
+
+func parseBenchstat(text string, opts Options) (Report, error) {
 	if strings.Contains(text, ",vs base,P") {
 		return parseCSV(text, opts)
 	}
@@ -167,14 +193,14 @@ func normalizeOptions(opts Options) Options {
 	}
 
 	if opts.Mode == "" {
-		opts.Mode = modeBenchstat
+		opts.Mode = modeAuto
 	}
 
-	if opts.Baseline == "" {
+	if opts.Mode == modeAlternatives && opts.Baseline == "" {
 		opts.Baseline = defaultBaseline
 	}
 
-	if opts.Candidate == "" {
+	if opts.Mode == modeAlternatives && opts.Candidate == "" {
 		opts.Candidate = defaultCandidate
 	}
 
@@ -211,6 +237,8 @@ func (state *textParseState) handleLine(rawLine string, opts Options) {
 		return
 	}
 
+	state.captureLabels(line)
+
 	if match := oldHeaderRe.FindStringSubmatch(line); match != nil {
 		state.currentMetric = normalizeMetric(match[1])
 
@@ -225,8 +253,58 @@ func (state *textParseState) handleLine(rawLine string, opts Options) {
 
 	row, ok := parseComparisonLine(line, state.currentMetric, opts)
 	if ok {
+		row.BaselineLabel = state.displayBaselineLabel()
+		row.CandidateLabel = state.displayCandidateLabel()
 		state.rows = append(state.rows, row)
 	}
+}
+
+func (state *textParseState) captureLabels(line string) {
+	if state.baselineLabel != "" || !strings.Contains(line, "│") {
+		return
+	}
+
+	labels, ok := parseBenchstatTextLabels(line)
+	if !ok {
+		return
+	}
+
+	state.baselineLabel = labels[0]
+	state.candidateLabel = labels[1]
+}
+
+func parseBenchstatTextLabels(line string) ([2]string, bool) {
+	parts := strings.Split(line, "│")
+	cells := make([]string, 0, len(parts))
+
+	for _, part := range parts {
+		cell := strings.TrimSpace(part)
+		if cell != "" {
+			cells = append(cells, cell)
+		}
+	}
+
+	if len(cells) < 2 || metricRe.MatchString(cells[0]) || metricRe.MatchString(cells[1]) {
+		return [2]string{}, false
+	}
+
+	return [2]string{displayLabel(cells[0]), displayLabel(cells[1])}, true
+}
+
+func (state *textParseState) displayBaselineLabel() string {
+	if state.baselineLabel != "" {
+		return state.baselineLabel
+	}
+
+	return fallbackBaselineLabel
+}
+
+func (state *textParseState) displayCandidateLabel() string {
+	if state.candidateLabel != "" {
+		return state.candidateLabel
+	}
+
+	return fallbackCandidateLabel
 }
 
 func (state *textParseState) handleLineWithoutPValue(line string) {
@@ -464,8 +542,14 @@ func sortedAlternativeParents(samples alternativeSampleSet) []string {
 
 func (state *alternativeParseState) evaluateParent(parent string, opts Options) ([]Comparison, *BenchmarkVerdict) {
 	labels := state.samples[parent]
-	baselineMetrics, hasBaseline := labels[opts.Baseline]
-	candidateMetrics, hasCandidate := labels[opts.Candidate]
+
+	baselineLabel, candidateLabel, ok := selectAlternativeLabels(labels, opts)
+	if !ok {
+		return nil, alternativeInconclusive(parent, "ambiguous-alternatives")
+	}
+
+	baselineMetrics, hasBaseline := labels[baselineLabel]
+	candidateMetrics, hasCandidate := labels[candidateLabel]
 
 	switch {
 	case !hasBaseline:
@@ -474,7 +558,7 @@ func (state *alternativeParseState) evaluateParent(parent string, opts Options) 
 		return nil, alternativeInconclusive(parent, "missing-candidate")
 	}
 
-	rows, ok := compareAlternativeMetrics(parent, baselineMetrics, candidateMetrics, opts)
+	rows, ok := compareAlternativeMetrics(parent, baselineLabel, candidateLabel, baselineMetrics, candidateMetrics, opts)
 	if !ok {
 		state.hasInsufficientRows = true
 
@@ -488,8 +572,35 @@ func (state *alternativeParseState) evaluateParent(parent string, opts Options) 
 	return rows, nil
 }
 
+func selectAlternativeLabels(labels map[string]map[string][]float64, opts Options) (string, string, bool) {
+	if opts.Baseline != "" || opts.Candidate != "" {
+		return opts.Baseline, opts.Candidate, true
+	}
+
+	if _, hasBaseline := labels[defaultBaseline]; hasBaseline {
+		if _, hasCandidate := labels[defaultCandidate]; hasCandidate {
+			return defaultBaseline, defaultCandidate, true
+		}
+	}
+
+	names := make([]string, 0, len(labels))
+	for label := range labels {
+		names = append(names, label)
+	}
+
+	sort.Strings(names)
+
+	if len(names) != requiredAlternativePair {
+		return "", "", false
+	}
+
+	return names[0], names[1], true
+}
+
 func compareAlternativeMetrics(
 	parent string,
+	baselineLabel string,
+	candidateLabel string,
 	baselineMetrics map[string][]float64,
 	candidateMetrics map[string][]float64,
 	opts Options,
@@ -505,7 +616,15 @@ func compareAlternativeMetrics(
 			return nil, false
 		}
 
-		rows = append(rows, compareAlternativeMetric(parent, metric, baseline, candidate, opts))
+		rows = append(rows, compareAlternativeMetric(
+			parent,
+			metric,
+			baselineLabel,
+			candidateLabel,
+			baseline,
+			candidate,
+			opts,
+		))
 	}
 
 	return rows, true
@@ -527,6 +646,8 @@ func commonMetrics(left, right map[string][]float64) []string {
 func compareAlternativeMetric(
 	parent string,
 	metric string,
+	baselineLabel string,
+	candidateLabel string,
 	baseline []float64,
 	candidate []float64,
 	opts Options,
@@ -538,12 +659,14 @@ func compareAlternativeMetric(
 	significant := pValue <= opts.Alpha && math.Abs(delta) >= opts.MinDeltaPct
 
 	return Comparison{
-		Benchmark:   parent,
-		Metric:      metric,
-		DeltaPct:    delta,
-		PValue:      pValue,
-		Significant: significant,
-		Direction:   classify(metric, delta, significant),
+		Benchmark:      parent,
+		Metric:         metric,
+		DeltaPct:       delta,
+		PValue:         pValue,
+		Significant:    significant,
+		Direction:      classify(metric, delta, significant),
+		BaselineLabel:  displayLabel(baselineLabel),
+		CandidateLabel: displayLabel(candidateLabel),
 	}
 }
 
@@ -640,6 +763,8 @@ func (state *csvParseState) handleRecord(record []string, opts Options) {
 	}
 
 	fields := trimRecord(record)
+	state.captureLabels(fields)
+
 	if isCSVMetricHeader(fields) {
 		state.setMetricHeader(fields)
 
@@ -665,6 +790,23 @@ func trimRecord(record []string) []string {
 	}
 
 	return fields
+}
+
+func (state *csvParseState) captureLabels(fields []string) {
+	if state.baselineLabel != "" || len(fields) < 4 || strings.TrimSpace(fields[0]) != "" {
+		return
+	}
+
+	if isCSVMetricHeader(fields) {
+		return
+	}
+
+	if fields[1] == "" || fields[3] == "" {
+		return
+	}
+
+	state.baselineLabel = displayLabel(fields[1])
+	state.candidateLabel = displayLabel(fields[3])
 }
 
 func (state *csvParseState) setMetricHeader(fields []string) {
@@ -705,27 +847,58 @@ func (state *csvParseState) parseComparison(fields []string, opts Options) (Comp
 		return Comparison{}, false
 	}
 
-	pValue, err := strconv.ParseFloat(fields[state.pValueIndex], 64)
-	if err != nil {
+	pValue, ok := parsePValue(fields[state.pValueIndex])
+	if !ok {
 		return Comparison{}, false
 	}
 
 	significant := pValue <= opts.Alpha && math.Abs(delta) >= opts.MinDeltaPct
 
 	return Comparison{
-		Benchmark:   fields[0],
-		Metric:      state.metric,
-		DeltaPct:    delta,
-		PValue:      pValue,
-		Significant: significant,
-		Direction:   classify(state.metric, delta, significant),
+		Benchmark:      fields[0],
+		Metric:         state.metric,
+		DeltaPct:       delta,
+		PValue:         pValue,
+		Significant:    significant,
+		Direction:      classify(state.metric, delta, significant),
+		BaselineLabel:  state.displayBaselineLabel(),
+		CandidateLabel: state.displayCandidateLabel(),
 	}, true
+}
+
+func (state *csvParseState) displayBaselineLabel() string {
+	if state.baselineLabel != "" {
+		return state.baselineLabel
+	}
+
+	return fallbackBaselineLabel
+}
+
+func (state *csvParseState) displayCandidateLabel() string {
+	if state.candidateLabel != "" {
+		return state.candidateLabel
+	}
+
+	return fallbackCandidateLabel
 }
 
 func (state *csvParseState) isMissingPValue(fields []string) bool {
 	return !hasField(fields, state.pValueIndex) ||
 		fields[state.pValueIndex] == "" ||
 		fields[state.pValueIndex] == "?"
+}
+
+func parsePValue(raw string) (float64, bool) {
+	raw = strings.TrimSpace(raw)
+	if match := pValueRe.FindStringSubmatch(raw); match != nil && match[1] != "n/a" {
+		pValue, err := strconv.ParseFloat(match[1], 64)
+
+		return pValue, err == nil
+	}
+
+	pValue, err := strconv.ParseFloat(raw, 64)
+
+	return pValue, err == nil
 }
 
 func hasField(fields []string, index int) bool {
@@ -776,6 +949,36 @@ func parseDeltaPercent(rawDelta string) (float64, bool) {
 	}
 
 	return delta, true
+}
+
+func looksLikeRawBenchmarkInput(input string) bool {
+	scanner := bufio.NewScanner(strings.NewReader(input))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if !strings.HasPrefix(line, "Benchmark") {
+			continue
+		}
+
+		if _, ok := parseRawBenchmarkLine(line); ok {
+			return true
+		}
+	}
+
+	return false
+}
+
+func displayLabel(label string) string {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return label
+	}
+
+	base := filepath.Base(label)
+	if base == "." || base == string(filepath.Separator) {
+		return label
+	}
+
+	return base
 }
 
 func looksLikeComparisonLine(line string) bool {
@@ -915,17 +1118,53 @@ func evaluate(rows []Comparison) Report {
 		}
 
 		outcome, reason := decide(improved, worsened, len(metrics))
+		baselineLabel, candidateLabel := comparisonLabels(metrics)
 
 		verdicts = append(verdicts, BenchmarkVerdict{
-			Benchmark:  name,
-			Outcome:    outcome,
-			Metrics:    metrics,
-			Reason:     reason,
-			ReasonCode: "",
+			Benchmark:      name,
+			Outcome:        outcome,
+			Winner:         winnerLabel(outcome, baselineLabel, candidateLabel),
+			BaselineLabel:  baselineLabel,
+			CandidateLabel: candidateLabel,
+			Metrics:        metrics,
+			Reason:         reason,
+			ReasonCode:     "",
 		})
 	}
 
 	return Report{Verdicts: verdicts}
+}
+
+func comparisonLabels(metrics []Comparison) (string, string) {
+	if len(metrics) == 0 {
+		return fallbackBaselineLabel, fallbackCandidateLabel
+	}
+
+	baselineLabel := metrics[0].BaselineLabel
+	candidateLabel := metrics[0].CandidateLabel
+
+	if baselineLabel == "" {
+		baselineLabel = fallbackBaselineLabel
+	}
+
+	if candidateLabel == "" {
+		candidateLabel = fallbackCandidateLabel
+	}
+
+	return baselineLabel, candidateLabel
+}
+
+func winnerLabel(outcome Outcome, baselineLabel, candidateLabel string) string {
+	switch outcome {
+	case NewWins:
+		return candidateLabel
+	case OldWins:
+		return baselineLabel
+	case Tie, TradeOff, Inconclusive:
+		return ""
+	default:
+		return ""
+	}
 }
 
 func decide(improved, worsened, total int) (Outcome, string) {
@@ -955,12 +1194,39 @@ func (r Report) WriteText(w io.Writer) error {
 }
 
 func writeTextVerdict(writer io.Writer, verdict BenchmarkVerdict) error {
-	_, err := fmt.Fprintf(writer, "%s: %s\n", verdict.Benchmark, verdict.Outcome)
+	_, err := fmt.Fprintf(writer, "%s: %s\n", verdict.Benchmark, textOutcome(verdict))
 	if err != nil {
 		return fmt.Errorf("%w: %w", errWritingTextOutput, err)
 	}
 
-	_, err = fmt.Fprintf(writer, "  %s\n", verdict.Reason)
+	return nil
+}
+
+func textOutcome(verdict BenchmarkVerdict) string {
+	if verdict.Winner != "" {
+		return verdict.Winner + " wins"
+	}
+
+	return string(verdict.Outcome)
+}
+
+// WriteVerboseText writes the report in a detailed text format.
+func (r Report) WriteVerboseText(w io.Writer) error {
+	for _, verdict := range r.Verdicts {
+		if err := writeVerboseTextVerdict(w, verdict); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeVerboseTextVerdict(writer io.Writer, verdict BenchmarkVerdict) error {
+	if err := writeTextVerdict(writer, verdict); err != nil {
+		return err
+	}
+
+	_, err := fmt.Fprintf(writer, "  %s\n", verdict.Reason)
 	if err != nil {
 		return fmt.Errorf("%w: %w", errWritingTextOutput, err)
 	}

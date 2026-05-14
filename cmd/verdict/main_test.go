@@ -72,8 +72,26 @@ func TestRunCLITextFormat(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(out.String(), "Foo-8: new-wins") {
+	if !strings.Contains(out.String(), "Foo-8: new wins") {
 		t.Fatalf("output = %q, want benchmark verdict", out.String())
+	}
+}
+
+func TestRunCLIVerboseTextFormat(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := runCLI([]string{"--verbose"}, strings.NewReader(winningInput), &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := out.String()
+	for _, want := range []string{"Foo-8: new wins", "Pareto-superior", "+ sec/op"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output = %q, want %q", got, want)
+		}
 	}
 }
 
@@ -144,8 +162,23 @@ func TestRunCLIAlternativesMode(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(out.String(), "BenchmarkEnhance: new-wins") {
+	if !strings.Contains(out.String(), "BenchmarkEnhance: enhanced wins") {
 		t.Fatalf("output = %q, want alternative verdict", out.String())
+	}
+}
+
+func TestRunCLIAutoModeAlternatives(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := runCLI(nil, strings.NewReader(alternativesInput), &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if out.String() != "BenchmarkEnhance: enhanced wins\n" {
+		t.Fatalf("output = %q, want auto alternative verdict", out.String())
 	}
 }
 
@@ -169,7 +202,7 @@ func TestRunCLIAlternativesModeWithCustomLabels(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(out.String(), "BenchmarkEnhance: new-wins") {
+	if !strings.Contains(out.String(), "BenchmarkEnhance: candidate wins") {
 		t.Fatalf("output = %q, want custom-label alternative verdict", out.String())
 	}
 }
