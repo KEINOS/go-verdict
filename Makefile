@@ -1,4 +1,4 @@
-.PHONY: test lint build data data-example-mismatch data-benchstat-repeat-fast data-alternatives e2e e2e-benchstat e2e-alternatives e2e-ab e2e-insufficient
+.PHONY: test lint build clean data data-example-mismatch data-benchstat-repeat-fast data-alternatives e2e e2e-benchstat e2e-alternatives e2e-ab e2e-insufficient
 
 VERDICT := ./dist/verdict
 
@@ -66,3 +66,7 @@ e2e-insufficient: build
 	! $(VERDICT) < ./testdata/bench_alternatives_count2.txt 2> ./testdata/verdict_insufficient_error_E2E.txt
 	grep -q 'insufficient samples' ./testdata/verdict_insufficient_error_E2E.txt
 	grep -q -- '-count=10 or more' ./testdata/verdict_insufficient_error_E2E.txt
+
+clean:
+	rm -f ./testdata/*.txt
+	rm -rf ./dist
