@@ -1,4 +1,4 @@
-.PHONY: test lint build data data-example-mismatch data-benchstat-repeat-fast data-alternatives e2e e2e-benchstat e2e-alternatives
+.PHONY: test lint build data data-example-mismatch data-benchstat-repeat-fast data-alternatives e2e e2e-benchstat e2e-alternatives e2e-ab e2e-insufficient
 
 VERDICT := ./dist/verdict
 
@@ -32,7 +32,7 @@ data-alternatives:
 	@printf '\n== Generate alternatives E2E fixture: BenchmarkEnhance/original vs BenchmarkEnhance/enhanced ==\n'
 	go test -run='^$$' -bench=BenchmarkEnhance -benchmem -count=8 ./testdata > ./testdata/bench_alternatives.txt
 
-e2e: e2e-benchstat e2e-alternatives
+e2e: e2e-benchstat e2e-alternatives e2e-ab e2e-insufficient
 
 e2e-benchstat: build data-benchstat-repeat-fast
 	@printf '\n== Run auto benchstat E2E: repeated BenchmarkExampleFast checks old/new benchstat parsing, not Fast vs Slow speed ==\n'
@@ -51,3 +51,18 @@ e2e-alternatives: build data-alternatives
 	grep -q 'BenchmarkEnhance: enhanced wins' ./testdata/verdict_alternatives_text_E2E.txt
 	grep -q 'Pareto-superior' ./testdata/verdict_alternatives_verbose_text_E2E.txt
 	grep -q '"benchmark": "BenchmarkEnhance"' ./testdata/verdict_alternatives_json_E2E.txt
+
+e2e-ab: build data-example-mismatch
+	@printf '\n== Run explicit A/B E2E: different benchmark names can be compared with -a and -b ==\n'
+	! benchstat ./testdata/bench_ExampleFast.txt ./testdata/bench_ExampleSlow.txt | $(VERDICT) 2> ./testdata/verdict_mismatch_error_E2E.txt
+	grep -q 'benchmark names differ' ./testdata/verdict_mismatch_error_E2E.txt
+	grep -q 'verdict -a' ./testdata/verdict_mismatch_error_E2E.txt
+	$(VERDICT) -a ./testdata/bench_ExampleFast.txt -b ./testdata/bench_ExampleSlow.txt | tee ./testdata/verdict_ab_text_E2E.txt
+	grep -q 'BenchmarkExampleFast_vs_BenchmarkExampleSlow: BenchmarkExampleFast wins' ./testdata/verdict_ab_text_E2E.txt
+
+e2e-insufficient: build
+	@printf '\n== Run insufficient raw samples E2E: count=2 asks for more samples ==\n'
+	go test -run='^$$' -bench=BenchmarkEnhance -benchmem -count=2 ./testdata > ./testdata/bench_alternatives_count2.txt
+	! $(VERDICT) < ./testdata/bench_alternatives_count2.txt 2> ./testdata/verdict_insufficient_error_E2E.txt
+	grep -q 'insufficient samples' ./testdata/verdict_insufficient_error_E2E.txt
+	grep -q -- '-count=10 or more' ./testdata/verdict_insufficient_error_E2E.txt

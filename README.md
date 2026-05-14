@@ -1,6 +1,6 @@
 # go-verdict
 
-`verdict` command is a simple comparison tool for Go benchmarks. It reads the benchmark results from standard input and gives a simple verdict.
+`verdict` is a small command for Go benchmarks. It reads benchmark data and prints which side wins.
 
 ```sh
 benchstat old.txt new.txt | verdict
@@ -17,13 +17,14 @@ It is useful when you want a clear answer after changing code:
 - Did it become slower?
 - Is the result only noise?
 - Is there a trade-off between metrics?
-- Is an alternative function better than the original function before making a PR?
+- Is another function better for the same job?
 
 ## Features
 
 - Supports modern `benchstat` CSV-style output.
 - Supports text `benchstat` output that includes `p=`.
 - Auto-detects raw `go test -bench` output for local alternative comparison.
+- Compares two raw benchmark files with `-a` and `-b`.
 - Prints one concise verdict line by default, with details available via `--verbose`.
 - Uses both statistical significance and a practical delta threshold.
 - Handles lower-is-better metrics such as `sec/op`, `ns/op`, `B/op`, and `allocs/op`.
@@ -32,7 +33,7 @@ It is useful when you want a clear answer after changing code:
 
 ## Workflows
 
-`verdict` is designed around two comparison workflows.
+`verdict` is designed around three common workflows.
 
 ### PR Comparison
 
@@ -64,7 +65,7 @@ ExampleFast-10: new.txt wins
 
 ### Local Alternative Comparison
 
-Use this workflow for quick PoC work before a PR. Use it when the original and alternative implementations can be benchmarked in the same test file.
+Use this workflow for quick PoC work before a PR. Use it when the original and alternative implementations are sub-benchmarks in the same test file.
 
 Example benchmark:
 
@@ -115,6 +116,44 @@ The outcome meaning is from the candidate point of view:
 | `inconclusive` | The input does not contain enough comparable samples. |
 
 Raw benchmark comparison supports `ns/op`, `B/op`, and `allocs/op` from `go test` output. It computes deltas and p-values from repeated samples, then applies the same `--alpha`, `--min-delta`, and verdict rules as PR comparison. It requires repeated samples from `-count=N`; if there are not enough samples to compare, it returns `inconclusive`.
+
+Run with enough samples. `-count=8` is accepted. If you use only `-count=2`, `verdict` asks you to run more samples:
+
+```text
+error: insufficient samples: run benchmarks with -count=10 or more
+```
+
+### Named File A/B Comparison
+
+Use this workflow when two benchmark functions have different names, but they do the same job.
+
+For example, this is not a valid before/after `benchstat` comparison:
+
+```sh
+benchstat fast.txt slow.txt | verdict
+```
+
+If `fast.txt` contains `BenchmarkExampleFast` and `slow.txt` contains `BenchmarkExampleSlow`, the benchmark names are different. `benchstat` compares the same benchmark name before and after a change, so `verdict` prints a helpful error.
+
+Use `-a` and `-b` to say: "compare these two raw benchmark files as A/B alternatives."
+
+```sh
+verdict -a fast.txt -b slow.txt
+```
+
+Example output:
+
+```text
+BenchmarkExampleFast_vs_BenchmarkExampleSlow: BenchmarkExampleFast wins
+```
+
+Each file should contain one benchmark series, collected with repeated samples:
+
+```sh
+go test -run='^$' -bench=BenchmarkExampleFast -count=10 ./testdata > fast.txt
+go test -run='^$' -bench=BenchmarkExampleSlow -count=10 ./testdata > slow.txt
+verdict -a fast.txt -b slow.txt
+```
 
 ## Requirements
 
@@ -215,6 +254,12 @@ Example JSON:
 --verbose
     Include verdict reason and metric details in text output.
 
+-a file
+    Raw benchmark file for side A.
+
+-b file
+    Raw benchmark file for side B.
+
 --baseline name
     Baseline sub-benchmark name for alternatives mode.
 
@@ -271,6 +316,7 @@ Known reason codes include:
 | `insufficient-samples` | Alternative mode found too few repeated samples. |
 | `unsupported-metric` | Alternative mode did not find supported metrics to compare. |
 | `malformed-benchmark` | Alternative mode could not parse the raw benchmark rows. |
+| `ambiguous-benchmark` | A raw file contains more than one benchmark series. |
 
 ## Library Usage
 

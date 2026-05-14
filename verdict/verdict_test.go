@@ -17,6 +17,7 @@ const (
 	altMode                  = "alternatives"
 	reasonMalformedBenchmark = "malformed-benchmark"
 	reasonInsufficient       = "insufficient-samples"
+	reasonUnsupported        = "unsupported-metric"
 	rawAltInput              = "BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
 		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n" +
 		"BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
@@ -780,6 +781,155 @@ BenchmarkEnhance/c-10 100 8 ns/op
 	}
 }
 
+func TestCompareRawFilesDifferentBenchmarkNames(t *testing.T) {
+	t.Parallel()
+
+	fast := strings.NewReader(strings.Repeat("BenchmarkExampleFast-10 100 1 ns/op\n", 10))
+	slow := strings.NewReader(strings.Repeat("BenchmarkExampleSlow-10 100 10 ns/op\n", 10))
+
+	report, err := CompareRawFiles(fast, slow, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.Benchmark != "BenchmarkExampleFast_vs_BenchmarkExampleSlow" ||
+		got.Winner != "BenchmarkExampleFast" ||
+		got.Outcome != OldWins {
+		t.Fatalf("verdict = %+v, want BenchmarkExampleFast winner", got)
+	}
+}
+
+func TestCompareRawFilesInconclusiveCases(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range rawFileInconclusiveCases() {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			report, err := CompareRawFiles(strings.NewReader(test.aInput), strings.NewReader(test.bInput), Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got := report.Verdicts[0]
+			if got.Outcome != Inconclusive || got.ReasonCode != test.reason {
+				t.Fatalf("verdict = %+v, want %s", got, test.reason)
+			}
+		})
+	}
+}
+
+type rawFileInconclusiveCase struct {
+	name   string
+	aInput string
+	bInput string
+	reason string
+}
+
+func rawFileInconclusiveCases() []rawFileInconclusiveCase {
+	return []rawFileInconclusiveCase{
+		{
+			name:   "missing rows",
+			aInput: "PASS\n",
+			bInput: strings.Repeat("BenchmarkExampleSlow-10 100 10 ns/op\n", 10),
+			reason: reasonMalformedBenchmark,
+		},
+		{
+			name:   "malformed row",
+			aInput: "BenchmarkExampleFast-10 nope 1 ns/op\n",
+			bInput: strings.Repeat("BenchmarkExampleSlow-10 100 10 ns/op\n", 10),
+			reason: reasonMalformedBenchmark,
+		},
+		{
+			name: "multiple series",
+			aInput: strings.Repeat("BenchmarkExampleFast-10 100 1 ns/op\n", 10) +
+				strings.Repeat("BenchmarkOther-10 100 1 ns/op\n", 10),
+			bInput: strings.Repeat("BenchmarkExampleSlow-10 100 10 ns/op\n", 10),
+			reason: "ambiguous-benchmark",
+		},
+		{
+			name:   "unsupported metric",
+			aInput: strings.Repeat("BenchmarkExampleFast-10 100 1 MB/s\n", 10),
+			bInput: strings.Repeat("BenchmarkExampleSlow-10 100 10 MB/s\n", 10),
+			reason: reasonUnsupported,
+		},
+		{
+			name:   "insufficient samples",
+			aInput: "BenchmarkExampleFast-10 100 1 ns/op\n",
+			bInput: strings.Repeat("BenchmarkExampleSlow-10 100 10 ns/op\n", 10),
+			reason: reasonInsufficient,
+		},
+		{
+			name:   "no common metric",
+			aInput: strings.Repeat("BenchmarkExampleFast-10 100 1 ns/op\n", 10),
+			bInput: strings.Repeat("BenchmarkExampleSlow-10 100 1 allocs/op\n", 10),
+			reason: reasonUnsupported,
+		},
+	}
+}
+
+func TestCompareRawFilesReadErrors(t *testing.T) {
+	t.Parallel()
+
+	if _, err := CompareRawFiles(failingReader{}, strings.NewReader(""), Options{}); err == nil {
+		t.Fatal("expected a reader error")
+	}
+
+	if _, err := CompareRawFiles(strings.NewReader("PASS\n"), failingReader{}, Options{}); err == nil {
+		t.Fatal("expected b reader error")
+	}
+
+	longLine := strings.NewReader(strings.Repeat("x", 70*1024))
+	if _, err := CompareRawFiles(longLine, strings.NewReader(""), Options{}); err == nil {
+		t.Fatal("expected scanner error")
+	}
+}
+
+func TestParseTextBenchmarkSetMismatchReturnsLabels(t *testing.T) {
+	t.Parallel()
+
+	input := `goos: darwin
+goarch: arm64
+pkg: example.com/foo
+cpu: Apple M4
+               │ ./fast.txt │ ./slow.txt │
+               │   sec/op   │ sec/op vs base │
+Fast-10               1.0n
+Slow-10                         10.0n
+geomean               1.0n      10.0n ? ¹ ²
+¹ benchmark set differs from baseline; geomeans may not be comparable
+`
+
+	report, err := Parse(strings.NewReader(input), Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := report.Verdicts[0]
+	if got.ReasonCode != "benchmark-set-mismatch" ||
+		got.BaselineLabel != "./fast.txt" ||
+		got.CandidateLabel != "./slow.txt" {
+		t.Fatalf("verdict = %+v, want benchmark-set-mismatch labels", got)
+	}
+}
+
+func TestPrivateRawFileBenchmarkLineBranches(t *testing.T) {
+	t.Parallel()
+
+	for _, line := range []string{
+		"BenchmarkExampleFast-10 100",
+		"BenchmarkExampleFast-10 nope 1 ns/op",
+		"BenchmarkExampleFast-10 100 1",
+		"BenchmarkExampleFast-10 100 1 ns/op 2",
+		"-10 100 1 ns/op",
+	} {
+		if _, _, ok := parseRawFileBenchmarkLine(line); ok {
+			t.Fatalf("line %q parsed, want false", line)
+		}
+	}
+}
+
 func TestParseAlternativesModeNestedNameAndCustomLabels(t *testing.T) {
 	t.Parallel()
 
@@ -1136,6 +1286,14 @@ func TestPrivateTextLabelBranches(t *testing.T) {
 	if _, ok := parseBenchstatTextLabels("│ sec/op │ sec/op vs base │"); ok {
 		t.Fatal("metric header should not parse as labels")
 	}
+
+	if got := emptyTextState.rawBaselineLabel(); got != labelOld {
+		t.Fatalf("raw baseline label = %q, want old", got)
+	}
+
+	if got := emptyTextState.rawCandidateLabel(); got != labelNew {
+		t.Fatalf("raw candidate label = %q, want new", got)
+	}
 }
 
 func TestPrivateCSVLabelBranches(t *testing.T) {
@@ -1155,6 +1313,14 @@ func TestPrivateCSVLabelBranches(t *testing.T) {
 
 	if got := csvState.displayCandidateLabel(); got != labelNew {
 		t.Fatalf("candidate label = %q, want new", got)
+	}
+
+	if got := csvState.rawBaselineLabel(); got != labelOld {
+		t.Fatalf("raw baseline label = %q, want old", got)
+	}
+
+	if got := csvState.rawCandidateLabel(); got != labelNew {
+		t.Fatalf("raw candidate label = %q, want new", got)
 	}
 }
 

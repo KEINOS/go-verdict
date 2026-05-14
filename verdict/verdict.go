@@ -87,6 +87,7 @@ type textParseState struct {
 	currentMetric             string
 	baselineLabel             string
 	candidateLabel            string
+	hasBenchmarkSetMismatch   bool
 	hasComparisonRowsWithoutP bool
 }
 
@@ -111,6 +112,15 @@ type alternativeParseState struct {
 	hasMalformedRows    bool
 	hasUnsupportedRows  bool
 	hasInsufficientRows bool
+}
+
+type rawFileParseState struct {
+	name               string
+	metrics            map[string][]float64
+	hasBenchmarkRows   bool
+	hasMalformedRows   bool
+	hasUnsupportedRows bool
+	hasMultipleSeries  bool
 }
 
 var (
@@ -221,8 +231,12 @@ func parseText(input string, opts Options) (Report, error) {
 	}
 
 	if len(state.rows) == 0 {
+		if state.hasBenchmarkSetMismatch {
+			return state.inconclusiveReport("benchmark-set-mismatch"), nil
+		}
+
 		if state.hasComparisonRowsWithoutP {
-			return inconclusiveReport("missing-pvalue"), nil
+			return state.inconclusiveReport("missing-pvalue"), nil
 		}
 
 		return Report{}, errNoComparisonRows
@@ -235,6 +249,10 @@ func (state *textParseState) handleLine(rawLine string, opts Options) {
 	line := strings.TrimSpace(rawLine)
 	if shouldSkip(line) {
 		return
+	}
+
+	if strings.Contains(line, "benchmark set differs") {
+		state.hasBenchmarkSetMismatch = true
 	}
 
 	state.captureLabels(line)
@@ -288,10 +306,34 @@ func parseBenchstatTextLabels(line string) ([2]string, bool) {
 		return [2]string{}, false
 	}
 
-	return [2]string{displayLabel(cells[0]), displayLabel(cells[1])}, true
+	return [2]string{cells[0], cells[1]}, true
 }
 
 func (state *textParseState) displayBaselineLabel() string {
+	if state.baselineLabel != "" {
+		return displayLabel(state.baselineLabel)
+	}
+
+	return fallbackBaselineLabel
+}
+
+func (state *textParseState) displayCandidateLabel() string {
+	if state.candidateLabel != "" {
+		return displayLabel(state.candidateLabel)
+	}
+
+	return fallbackCandidateLabel
+}
+
+func (state *textParseState) inconclusiveReport(reason string) Report {
+	return labeledInconclusiveReport(
+		reason,
+		state.rawBaselineLabel(),
+		state.rawCandidateLabel(),
+	)
+}
+
+func (state *textParseState) rawBaselineLabel() string {
 	if state.baselineLabel != "" {
 		return state.baselineLabel
 	}
@@ -299,7 +341,7 @@ func (state *textParseState) displayBaselineLabel() string {
 	return fallbackBaselineLabel
 }
 
-func (state *textParseState) displayCandidateLabel() string {
+func (state *textParseState) rawCandidateLabel() string {
 	if state.candidateLabel != "" {
 		return state.candidateLabel
 	}
@@ -334,7 +376,11 @@ func parseCSV(input string, opts Options) (Report, error) {
 
 	if len(state.rows) == 0 {
 		if state.hasBenchmarkSetMismatch {
-			return inconclusiveReport("benchmark-set-mismatch"), nil
+			return labeledInconclusiveReport(
+				"benchmark-set-mismatch",
+				state.rawBaselineLabel(),
+				state.rawCandidateLabel(),
+			), nil
 		}
 
 		if state.hasRowWithoutP {
@@ -365,6 +411,135 @@ func parseAlternatives(input string, opts Options) Report {
 	}
 
 	return report
+}
+
+// CompareRawFiles compares two raw go test benchmark result files as explicit A/B inputs.
+func CompareRawFiles(aReader io.Reader, bReader io.Reader, opts Options) (Report, error) {
+	opts = normalizeOptions(opts)
+
+	aState, err := parseRawFile(aReader)
+	if err != nil {
+		return Report{}, err
+	}
+
+	bState, err := parseRawFile(bReader)
+	if err != nil {
+		return Report{}, err
+	}
+
+	if inconclusive := rawFileInconclusive(aState, bState); inconclusive != nil {
+		return Report{Verdicts: []BenchmarkVerdict{*inconclusive}}, nil
+	}
+
+	benchmark := aState.name + "_vs_" + bState.name
+
+	rows, ok := compareAlternativeMetrics(
+		benchmark,
+		aState.name,
+		bState.name,
+		aState.metrics,
+		bState.metrics,
+		opts,
+	)
+	if !ok {
+		return Report{Verdicts: []BenchmarkVerdict{*alternativeInconclusive(benchmark, "insufficient-samples")}}, nil
+	}
+
+	if len(rows) == 0 {
+		return Report{Verdicts: []BenchmarkVerdict{*alternativeInconclusive(benchmark, "unsupported-metric")}}, nil
+	}
+
+	return evaluate(rows), nil
+}
+
+func parseRawFile(reader io.Reader) (rawFileParseState, error) {
+	input, err := io.ReadAll(reader)
+	if err != nil {
+		return rawFileParseState{}, fmt.Errorf("%w: %w", errReadingInput, err)
+	}
+
+	state := rawFileParseState{metrics: map[string][]float64{}}
+	scanner := bufio.NewScanner(strings.NewReader(string(input)))
+
+	for scanner.Scan() {
+		state.handleLine(scanner.Text())
+	}
+
+	if err := scanner.Err(); err != nil {
+		return rawFileParseState{}, fmt.Errorf("%w: %w", errScanningTextInput, err)
+	}
+
+	return state, nil
+}
+
+func (state *rawFileParseState) handleLine(line string) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "Benchmark") {
+		return
+	}
+
+	state.hasBenchmarkRows = true
+
+	name, metrics, ok := parseRawFileBenchmarkLine(line)
+	if !ok {
+		state.hasMalformedRows = true
+
+		return
+	}
+
+	if len(metrics) == 0 {
+		state.hasUnsupportedRows = true
+
+		return
+	}
+
+	if state.name != "" && state.name != name {
+		state.hasMultipleSeries = true
+
+		return
+	}
+
+	state.name = name
+	for metric, value := range metrics {
+		state.metrics[metric] = append(state.metrics[metric], value)
+	}
+}
+
+func parseRawFileBenchmarkLine(line string) (string, map[string]float64, bool) {
+	fields := strings.Fields(line)
+	if len(fields) < rawBenchmarkMinFields {
+		return "", nil, false
+	}
+
+	if _, err := strconv.Atoi(fields[1]); err != nil {
+		return "", nil, false
+	}
+
+	if len(fields[2:])%rawBenchmarkValueUnit != 0 {
+		return "", nil, false
+	}
+
+	name := trimCPUSuffix(fields[0])
+	if name == "" {
+		return "", nil, false
+	}
+
+	return name, parseRawMetrics(fields[2:]), true
+}
+
+func rawFileInconclusive(aState, bState rawFileParseState) *BenchmarkVerdict {
+	switch {
+	case !aState.hasBenchmarkRows || !bState.hasBenchmarkRows:
+		return alternativeInconclusive("all", "malformed-benchmark")
+	case aState.hasMalformedRows || bState.hasMalformedRows:
+		return alternativeInconclusive("all", "malformed-benchmark")
+	case aState.hasMultipleSeries || bState.hasMultipleSeries:
+		return alternativeInconclusive("all", "ambiguous-benchmark")
+	case aState.hasUnsupportedRows || bState.hasUnsupportedRows:
+		return alternativeInconclusive("all", "unsupported-metric")
+	default:
+		return nil
+	}
 }
 
 func newAlternativeParseState() alternativeParseState {
@@ -805,8 +980,8 @@ func (state *csvParseState) captureLabels(fields []string) {
 		return
 	}
 
-	state.baselineLabel = displayLabel(fields[1])
-	state.candidateLabel = displayLabel(fields[3])
+	state.baselineLabel = fields[1]
+	state.candidateLabel = fields[3]
 }
 
 func (state *csvParseState) setMetricHeader(fields []string) {
@@ -868,13 +1043,29 @@ func (state *csvParseState) parseComparison(fields []string, opts Options) (Comp
 
 func (state *csvParseState) displayBaselineLabel() string {
 	if state.baselineLabel != "" {
-		return state.baselineLabel
+		return displayLabel(state.baselineLabel)
 	}
 
 	return fallbackBaselineLabel
 }
 
 func (state *csvParseState) displayCandidateLabel() string {
+	if state.candidateLabel != "" {
+		return displayLabel(state.candidateLabel)
+	}
+
+	return fallbackCandidateLabel
+}
+
+func (state *csvParseState) rawBaselineLabel() string {
+	if state.baselineLabel != "" {
+		return state.baselineLabel
+	}
+
+	return fallbackBaselineLabel
+}
+
+func (state *csvParseState) rawCandidateLabel() string {
 	if state.candidateLabel != "" {
 		return state.candidateLabel
 	}
@@ -993,13 +1184,19 @@ func looksLikeComparisonLine(line string) bool {
 }
 
 func inconclusiveReport(reason string) Report {
+	return labeledInconclusiveReport(reason, "", "")
+}
+
+func labeledInconclusiveReport(reason, baselineLabel, candidateLabel string) Report {
 	return Report{
 		Verdicts: []BenchmarkVerdict{{
-			Benchmark:  "all",
-			Outcome:    Inconclusive,
-			Metrics:    nil,
-			Reason:     "inconclusive input",
-			ReasonCode: reason,
+			Benchmark:      "all",
+			Outcome:        Inconclusive,
+			BaselineLabel:  baselineLabel,
+			CandidateLabel: candidateLabel,
+			Metrics:        nil,
+			Reason:         "inconclusive input",
+			ReasonCode:     reason,
 		}},
 	}
 }
