@@ -12,7 +12,7 @@ lint:
 
 build:
 	mkdir -p ./dist
-	go build -o $(VERDICT) ./cmd/verdict/main.go
+	go build -ldflags="-s -w" -trimpath -o $(VERDICT) ./cmd/verdict/main.go
 
 data: data-example-mismatch data-benchstat-repeat-fast data-alternatives
 
