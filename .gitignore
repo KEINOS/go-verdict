@@ -8,3 +8,4 @@ testdata/*.txt
 !skill/verdict/README.md
 .claude
 .vscode
+main
