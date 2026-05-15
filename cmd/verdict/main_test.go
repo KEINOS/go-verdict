@@ -120,6 +120,32 @@ func TestRunCLIJSONFormat(t *testing.T) {
 	}
 }
 
+func TestRunCLIHelpWritesSamplePolicy(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := runCLI([]string{flagHelpLong}, strings.NewReader(""), &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range sampleCountWording() {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("help = %q, want %q", out.String(), want)
+		}
+	}
+}
+
+func TestRunCLIHelpWriteErrorContainsContext(t *testing.T) {
+	t.Parallel()
+
+	err := runCLI([]string{flagHelpLong}, strings.NewReader(""), failingWriter{})
+	if !errors.Is(err, errWritingOutput) {
+		t.Fatalf("error = %v, want %v", err, errWritingOutput)
+	}
+}
+
 func TestRunCLIParseErrorContainsContext(t *testing.T) {
 	t.Parallel()
 
@@ -227,8 +253,31 @@ func TestRunCLIABFilesParseError(t *testing.T) {
 	mustWriteFile(t, slowPath, strings.Repeat("BenchmarkExampleSlow-10 100 10 ns/op\n", 10))
 
 	err := runCLI([]string{"-a", fastPath, "-b", slowPath}, strings.NewReader(""), &strings.Builder{})
-	if err == nil || !strings.Contains(err.Error(), "parsing input") {
-		t.Fatalf("error = %v, want parse error", err)
+	if err == nil {
+		t.Fatal("expected parse error")
+	}
+
+	for _, want := range []string{"parsing input", "scanning raw benchmark file input"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+	}
+}
+
+func TestRunCLIAlternativesScannerErrorIsParseError(t *testing.T) {
+	t.Parallel()
+
+	input := "BenchmarkEnhance/original-10 100 " + strings.Repeat("1", 70*1024) + " ns/op\n"
+
+	err := runCLI([]string{flagMode, modeAlt}, strings.NewReader(input), &strings.Builder{})
+	if err == nil {
+		t.Fatal("expected scanner parse error")
+	}
+
+	for _, want := range []string{"parsing input", "scanning raw alternatives input"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
 	}
 }
 
@@ -251,8 +300,37 @@ BenchmarkEnhance/enhanced-10 100 8 ns/op
 `
 
 	err := runCLI(nil, strings.NewReader(input), &strings.Builder{})
-	if err == nil || !strings.Contains(err.Error(), "insufficient samples") {
-		t.Fatalf("error = %v, want insufficient samples", err)
+	if err == nil {
+		t.Fatal("expected insufficient samples error")
+	}
+
+	for _, want := range []string{
+		"insufficient samples",
+		fmt.Sprintf("at least %d samples", verdict.RawComparisonMinSamples),
+		fmt.Sprintf("-count=%d or more", verdict.RecommendedRawSamples),
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+	}
+}
+
+func TestRunCLIRawSampleBoundaryAcceptsThreeSamples(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := runCLI(nil, strings.NewReader(strings.Repeat(
+		"BenchmarkEnhance/original-10 100 10 ns/op\n"+
+			"BenchmarkEnhance/enhanced-10 100 8 ns/op\n",
+		verdict.RawComparisonMinSamples,
+	)), &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(out.String(), "BenchmarkEnhance: enhanced wins") {
+		t.Fatalf("output = %q, want enhanced winner", out.String())
 	}
 }
 
@@ -272,9 +350,41 @@ func TestReportErrorBranches(t *testing.T) {
 	if !strings.Contains(err.Error(), "verdict -a ./a.txt -b ./b.txt") {
 		t.Fatalf("error = %q, want fallback labels", err.Error())
 	}
+}
 
-	if hasTooFewRawSamples("BenchmarkFoo/original-10\nnot benchmark\n") {
-		t.Fatal("short raw row should be ignored")
+func TestSampleCountWordingUsesSharedPolicy(t *testing.T) {
+	t.Parallel()
+
+	err := insufficientSamplesError()
+	for _, want := range sampleCountWording() {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error = %q, want %q", err.Error(), want)
+		}
+	}
+
+	help := flagHelpText()
+	for _, want := range sampleCountWording() {
+		if !strings.Contains(help, want) {
+			t.Fatalf("help = %q, want %q", help, want)
+		}
+	}
+
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range sampleCountWording() {
+		if !strings.Contains(string(readme), want) {
+			t.Fatalf("README does not contain %q", want)
+		}
+	}
+}
+
+func sampleCountWording() []string {
+	return []string{
+		fmt.Sprintf("at least %d samples", verdict.RawComparisonMinSamples),
+		fmt.Sprintf("-count=%d or more", verdict.RecommendedRawSamples),
 	}
 }
 

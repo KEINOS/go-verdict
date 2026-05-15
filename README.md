@@ -1,12 +1,14 @@
 # go-verdict
 
-`verdict` is a small command for Go benchmarks. It reads benchmark data and prints which side wins.
+`verdict` is a small command for Go benchmarks. It reads benchmark results and prints an A/B verdict.
 
 ```sh
+# Compare benchmark results before and after a change:
 benchstat old.txt new.txt | verdict
 ```
 
 ```sh
+# Compare two alternatives in raw benchmark output:
 % go test -run='^$' -bench=BenchmarkEnhance -benchmem -count=8 ./testdata | verdict
 BenchmarkEnhance: enhanced wins
 ```
@@ -35,37 +37,9 @@ It is useful when you want a clear answer after changing code:
 
 `verdict` is designed around three common workflows.
 
-### PR Comparison
-
-Use this workflow when you compare benchmark results from two different code states, such as before and after a pull request.
-
-Collect old benchmark results:
-
-```sh
-go test -run='^$' -bench=. -benchmem -count=20 > old.txt
-```
-
-Change your code, then collect new benchmark results:
-
-```sh
-go test -run='^$' -bench=. -benchmem -count=20 > new.txt
-```
-
-Compare them with `benchstat`, then pipe the result to `verdict`:
-
-```sh
-benchstat old.txt new.txt | verdict
-```
-
-If one side wins, `verdict` uses the file labels from the `benchstat` header:
-
-```text
-ExampleFast-10: new.txt wins
-```
-
 ### Local Alternative Comparison
 
-Use this workflow for quick PoC work before a PR. Use it when the original and alternative implementations are sub-benchmarks in the same test file.
+Use this workflow for a quick local test before a PR. Use it when the original and alternative implementations are sub-benchmarks in the same test file.
 
 Example benchmark:
 
@@ -105,7 +79,7 @@ Use explicit labels when the raw benchmark output has more than two alternatives
 verdict --mode alternatives --baseline original --candidate enhanced < alternatives.txt
 ```
 
-The outcome meaning is from the candidate point of view:
+The outcome meaning is from the new option side:
 
 | Outcome | Meaning in alternative mode |
 | --- | --- |
@@ -115,12 +89,12 @@ The outcome meaning is from the candidate point of view:
 | `trade-off` | Some metrics improved, but other metrics regressed. |
 | `inconclusive` | The input does not contain enough comparable samples. |
 
-Raw benchmark comparison supports `ns/op`, `B/op`, and `allocs/op` from `go test` output. It computes deltas and p-values from repeated samples, then applies the same `--alpha`, `--min-delta`, and verdict rules as PR comparison. It requires repeated samples from `-count=N`; if there are not enough samples to compare, it returns `inconclusive`.
+Raw benchmark comparison supports `ns/op`, `B/op`, and `allocs/op` from `go test` output. It computes deltas and p-values from repeated samples, then applies the same `--alpha`, `--min-delta`, and verdict rules as before/after comparison. It needs at least 3 samples per benchmark side; if there are fewer samples, it returns `inconclusive`.
 
-Run with enough samples. `-count=8` is accepted. If you use only `-count=2`, `verdict` asks you to run more samples:
+Run with enough samples. `-count=8` is accepted for quick local checks, but `-count=10` or more is recommended for stable results. If you use only `-count=2`, `verdict` asks you to run more samples:
 
 ```text
-error: insufficient samples: run benchmarks with -count=10 or more
+error: insufficient samples: need at least 3 samples per benchmark side; recommend -count=10 or more for stable results
 ```
 
 ### Named File A/B Comparison
@@ -155,10 +129,38 @@ go test -run='^$' -bench=BenchmarkExampleSlow -count=10 ./testdata > slow.txt
 verdict -a fast.txt -b slow.txt
 ```
 
+### PR or Before/After Comparison
+
+Use this workflow when you compare benchmark results from two different code states, such as before and after a pull request.
+
+Collect old benchmark results:
+
+```sh
+go test -run='^$' -bench=. -benchmem -count=20 > old.txt
+```
+
+Change your code, then collect new benchmark results:
+
+```sh
+go test -run='^$' -bench=. -benchmem -count=20 > new.txt
+```
+
+Compare them with `benchstat`, then pipe the result to `verdict`:
+
+```sh
+benchstat old.txt new.txt | verdict
+```
+
+If one side wins, `verdict` uses the file labels from the `benchstat` header:
+
+```text
+ExampleFast-10: new.txt wins
+```
+
 ## Requirements
 
 - Go 1.26.3 or later, as declared in `go.mod`.
-- `benchstat` for PR comparison.
+- `benchstat` for PR or before/after comparison.
 
 Install `benchstat` if you do not already have it:
 
@@ -184,7 +186,7 @@ go build -o ./dist/verdict ./cmd/verdict
 
 ## Quick Start
 
-Use PR comparison when you already have separate old and new benchmark files:
+Use before/after comparison when you already have separate old and new benchmark files:
 
 ```sh
 benchstat old.txt new.txt | verdict
@@ -245,6 +247,12 @@ Example JSON:
 ## CLI Options
 
 ```text
+Usage: verdict [options]
+
+Raw benchmark comparisons need at least 3 samples per benchmark side.
+For stable results, run benchmarks with -count=10 or more.
+
+Options:
 --format text|json
     Output format. Default: text.
 
@@ -283,7 +291,8 @@ With this command, a metric must have `p <= 0.05` and at least `2.0%` change to 
 
 ## Verdicts
 
-`go-verdict` uses Pareto-style rules for each benchmark.
+`go-verdict` uses Pareto-style rules for each benchmark. In this README,
+Pareto-superior means better in one or more metrics and not worse in any metric.
 
 | Outcome | Meaning |
 | --- | --- |
@@ -373,4 +382,4 @@ Makefile           Fixture and end-to-end commands
 
 ## License
 
-No license file is currently included in this repository.
+MIT License. See [LICENSE](LICENSE).

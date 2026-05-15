@@ -1,4 +1,4 @@
-.PHONY: test lint build clean data data-example-mismatch data-benchstat-repeat-fast data-alternatives e2e e2e-benchstat e2e-alternatives e2e-ab e2e-insufficient
+.PHONY: test lint build clean data data-example-mismatch data-benchstat-repeat-fast data-alternatives e2e e2e-readme-pipelines e2e-benchstat e2e-alternatives e2e-ab e2e-insufficient
 
 VERDICT := ./dist/verdict
 
@@ -32,7 +32,14 @@ data-alternatives:
 	@printf '\n== Generate alternatives E2E fixture: BenchmarkEnhance/original vs BenchmarkEnhance/enhanced ==\n'
 	go test -run='^$$' -bench=BenchmarkEnhance -benchmem -count=8 ./testdata > ./testdata/bench_alternatives.txt
 
-e2e: e2e-benchstat e2e-alternatives e2e-ab e2e-insufficient
+e2e: e2e-readme-pipelines e2e-benchstat e2e-alternatives e2e-ab e2e-insufficient
+
+e2e-readme-pipelines: build data-benchstat-repeat-fast
+	@printf '\n== Run README pipeline E2E: literal pipeline examples from the README opening ==\n'
+	benchstat ./testdata/bench_old.txt ./testdata/bench_new.txt | $(VERDICT) | tee ./testdata/verdict_readme_benchstat_pipeline_E2E.txt
+	go test -run='^$$' -bench=BenchmarkEnhance -benchmem -count=8 ./testdata | $(VERDICT) | tee ./testdata/verdict_readme_alternatives_pipeline_E2E.txt
+	grep -Eq 'ExampleFast-10: (tie|bench_(old|new)\.txt wins)' ./testdata/verdict_readme_benchstat_pipeline_E2E.txt
+	grep -q 'BenchmarkEnhance: enhanced wins' ./testdata/verdict_readme_alternatives_pipeline_E2E.txt
 
 e2e-benchstat: build data-benchstat-repeat-fast
 	@printf '\n== Run auto benchstat E2E: repeated BenchmarkExampleFast checks old/new benchstat parsing, not Fast vs Slow speed ==\n'
@@ -44,7 +51,7 @@ e2e-benchstat: build data-benchstat-repeat-fast
 	grep -q '"benchmark": "ExampleFast-10"' ./testdata/verdict_json_E2E.txt
 
 e2e-alternatives: build data-alternatives
-	@printf '\n== Run auto alternatives E2E: BenchmarkEnhance/original vs BenchmarkEnhance/enhanced checks local PoC comparison ==\n'
+	@printf '\n== Run auto alternatives E2E: BenchmarkEnhance/original vs BenchmarkEnhance/enhanced checks quick local comparison ==\n'
 	$(VERDICT) --format text < ./testdata/bench_alternatives.txt | tee ./testdata/verdict_alternatives_text_E2E.txt
 	$(VERDICT) --verbose --format text < ./testdata/bench_alternatives.txt | tee ./testdata/verdict_alternatives_verbose_text_E2E.txt
 	$(VERDICT) --format json < ./testdata/bench_alternatives.txt | tee ./testdata/verdict_alternatives_json_E2E.txt
@@ -65,6 +72,7 @@ e2e-insufficient: build
 	go test -run='^$$' -bench=BenchmarkEnhance -benchmem -count=2 ./testdata > ./testdata/bench_alternatives_count2.txt
 	! $(VERDICT) < ./testdata/bench_alternatives_count2.txt 2> ./testdata/verdict_insufficient_error_E2E.txt
 	grep -q 'insufficient samples' ./testdata/verdict_insufficient_error_E2E.txt
+	grep -q 'at least 3 samples' ./testdata/verdict_insufficient_error_E2E.txt
 	grep -q -- '-count=10 or more' ./testdata/verdict_insufficient_error_E2E.txt
 
 clean:

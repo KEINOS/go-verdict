@@ -132,6 +132,15 @@ var (
 )
 
 const (
+	// StatisticalMinSamples is the minimum needed for variance-based calculations.
+	StatisticalMinSamples = 2
+	// RawComparisonMinSamples is the minimum accepted sample count for raw benchmark comparisons.
+	RawComparisonMinSamples = 3
+	// RecommendedRawSamples is the recommended sample count for stable raw benchmark decisions.
+	RecommendedRawSamples = 10
+)
+
+const (
 	defaultAlpha            = 0.05
 	defaultBaseline         = "original"
 	defaultCandidate        = "enhanced"
@@ -148,7 +157,6 @@ const (
 	minimumComparisonFields = 2
 	requiredAlternativePair = 2
 	benchmarkSplitCount     = 2
-	minimumSamples          = 2
 	rawBenchmarkMinFields   = 4
 	rawBenchmarkNameParts   = 2
 	rawBenchmarkValueUnit   = 2
@@ -159,6 +167,8 @@ var (
 	errReadingInput      = errors.New("reading benchstat input")
 	errReadingCSVInput   = errors.New("reading benchstat csv input")
 	errScanningTextInput = errors.New("scanning benchstat text input")
+	errScanningRawInput  = errors.New("scanning raw alternatives input")
+	errScanningRawFile   = errors.New("scanning raw benchmark file input")
 	errNoComparisonRows  = errors.New("no benchstat comparison rows found")
 	errWritingTextOutput = errors.New("writing text report")
 	errWritingJSONOutput = errors.New("writing json report")
@@ -177,12 +187,12 @@ func Parse(r io.Reader, opts Options) (Report, error) {
 
 	switch opts.Mode {
 	case modeAlternatives:
-		return parseAlternatives(text, opts), nil
+		return parseAlternatives(text, opts)
 	case modeBenchstat:
 		return parseBenchstat(text, opts)
 	default:
 		if looksLikeRawBenchmarkInput(text) {
-			return parseAlternatives(text, opts), nil
+			return parseAlternatives(text, opts)
 		}
 
 		return parseBenchstat(text, opts)
@@ -393,7 +403,7 @@ func parseCSV(input string, opts Options) (Report, error) {
 	return evaluate(state.rows), nil
 }
 
-func parseAlternatives(input string, opts Options) Report {
+func parseAlternatives(input string, opts Options) (Report, error) {
 	state := newAlternativeParseState()
 
 	scanner := bufio.NewScanner(strings.NewReader(input))
@@ -401,16 +411,20 @@ func parseAlternatives(input string, opts Options) Report {
 		state.handleLine(scanner.Text())
 	}
 
+	if err := scanner.Err(); err != nil {
+		return Report{}, fmt.Errorf("%w: %w", errScanningRawInput, err)
+	}
+
 	if !state.hasBenchmarkRows {
-		return inconclusiveReport("malformed-benchmark")
+		return inconclusiveReport("malformed-benchmark"), nil
 	}
 
 	report := state.evaluate(opts)
 	if len(report.Verdicts) == 0 {
-		return state.emptyAlternativeReport()
+		return state.emptyAlternativeReport(), nil
 	}
 
-	return report
+	return report, nil
 }
 
 // CompareRawFiles compares two raw go test benchmark result files as explicit A/B inputs.
@@ -466,7 +480,7 @@ func parseRawFile(reader io.Reader) (rawFileParseState, error) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return rawFileParseState{}, fmt.Errorf("%w: %w", errScanningTextInput, err)
+		return rawFileParseState{}, fmt.Errorf("%w: %w", errScanningRawFile, err)
 	}
 
 	return state, nil
@@ -787,7 +801,7 @@ func compareAlternativeMetrics(
 		baseline := baselineMetrics[metric]
 		candidate := candidateMetrics[metric]
 
-		if len(baseline) < minimumSamples || len(candidate) < minimumSamples {
+		if len(baseline) < RawComparisonMinSamples || len(candidate) < RawComparisonMinSamples {
 			return nil, false
 		}
 
@@ -855,7 +869,7 @@ func mean(values []float64) float64 {
 }
 
 func variance(values []float64, sampleMean float64) float64 {
-	if len(values) < minimumSamples {
+	if len(values) < StatisticalMinSamples {
 		return 0
 	}
 
@@ -1369,9 +1383,9 @@ func decide(improved, worsened, total int) (Outcome, string) {
 	case total == 0:
 		return Inconclusive, "no comparable metrics"
 	case improved > 0 && worsened == 0:
-		return NewWins, "new is Pareto-superior: at least one significant improvement and no significant regressions"
+		return NewWins, "new is Pareto-superior: better in one or more metrics and not worse in any metric"
 	case worsened > 0 && improved == 0:
-		return OldWins, "old is Pareto-superior: new has significant regressions and no significant improvements"
+		return OldWins, "old is Pareto-superior: new is worse in one or more metrics and not better in any metric"
 	case improved == 0 && worsened == 0:
 		return Tie, "no statistically significant practical difference"
 	default:

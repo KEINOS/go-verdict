@@ -2,6 +2,7 @@ package verdict
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -19,6 +20,8 @@ const (
 	reasonInsufficient       = "insufficient-samples"
 	reasonUnsupported        = "unsupported-metric"
 	rawAltInput              = "BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
+		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n" +
+		"BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
 		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n" +
 		"BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
 		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n"
@@ -299,6 +302,21 @@ func TestParseTextScannerErrorContainsContext(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "scanning benchstat text input") {
 		t.Fatalf("error = %q, want scanner context", err.Error())
+	}
+}
+
+func TestParseAlternativesScannerErrorContainsContext(t *testing.T) {
+	t.Parallel()
+
+	longLine := "BenchmarkEnhance/original-10 100 " + strings.Repeat("1", 70*1024) + " ns/op\n"
+
+	_, err := Parse(strings.NewReader(longLine), Options{Mode: altMode})
+	if err == nil {
+		t.Fatal("expected scanner error")
+	}
+
+	if !strings.Contains(err.Error(), "scanning raw alternatives input") {
+		t.Fatalf("error = %q, want raw alternatives scanner context", err.Error())
 	}
 }
 
@@ -746,6 +764,8 @@ func TestParseAutoModeRawAlternativesInfersNonDefaultLabels(t *testing.T) {
 BenchmarkEnhance/candidate-10 100 8 ns/op
 BenchmarkEnhance/base-10 100 10 ns/op
 BenchmarkEnhance/candidate-10 100 8 ns/op
+BenchmarkEnhance/base-10 100 10 ns/op
+BenchmarkEnhance/candidate-10 100 8 ns/op
 `
 
 	report, err := Parse(strings.NewReader(input), Options{})
@@ -820,6 +840,44 @@ func TestCompareRawFilesInconclusiveCases(t *testing.T) {
 	}
 }
 
+func TestCompareRawFilesSampleBoundaries(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		count       int
+		wantReason  string
+		wantOutcome Outcome
+	}{
+		{count: StatisticalMinSamples, wantReason: reasonInsufficient, wantOutcome: Inconclusive},
+		{count: RawComparisonMinSamples, wantOutcome: OldWins},
+		{count: 8, wantOutcome: OldWins},
+		{count: RecommendedRawSamples - 1, wantOutcome: OldWins},
+		{count: RecommendedRawSamples, wantOutcome: OldWins},
+	} {
+		t.Run(fmt.Sprintf("count_%d", test.count), func(t *testing.T) {
+			t.Parallel()
+
+			report, err := CompareRawFiles(
+				strings.NewReader(rawFileSamples("BenchmarkExampleFast", 1, test.count)),
+				strings.NewReader(rawFileSamples("BenchmarkExampleSlow", 10, test.count)),
+				Options{},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got := report.Verdicts[0]
+			if got.Outcome != test.wantOutcome {
+				t.Fatalf("outcome = %s, want %s", got.Outcome, test.wantOutcome)
+			}
+
+			if got.ReasonCode != test.wantReason {
+				t.Fatalf("reason = %q, want %q", got.ReasonCode, test.wantReason)
+			}
+		})
+	}
+}
+
 type rawFileInconclusiveCase struct {
 	name   string
 	aInput string
@@ -869,6 +927,27 @@ func rawFileInconclusiveCases() []rawFileInconclusiveCase {
 	}
 }
 
+func rawAlternativeSamples(count int) string {
+	var input strings.Builder
+
+	for range count {
+		input.WriteString("BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n")
+		input.WriteString("BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n")
+	}
+
+	return input.String()
+}
+
+func rawFileSamples(name string, nsPerOp int, count int) string {
+	var input strings.Builder
+
+	for range count {
+		fmt.Fprintf(&input, "%s-10 100 %d ns/op\n", name, nsPerOp)
+	}
+
+	return input.String()
+}
+
 func TestCompareRawFilesReadErrors(t *testing.T) {
 	t.Parallel()
 
@@ -881,8 +960,14 @@ func TestCompareRawFilesReadErrors(t *testing.T) {
 	}
 
 	longLine := strings.NewReader(strings.Repeat("x", 70*1024))
-	if _, err := CompareRawFiles(longLine, strings.NewReader(""), Options{}); err == nil {
+
+	_, err := CompareRawFiles(longLine, strings.NewReader(""), Options{})
+	if err == nil {
 		t.Fatal("expected scanner error")
+	}
+
+	if !strings.Contains(err.Error(), "scanning raw benchmark file input") {
+		t.Fatalf("error = %q, want raw file scanner context", err.Error())
 	}
 }
 
@@ -937,6 +1022,8 @@ func TestParseAlternativesModeNestedNameAndCustomLabels(t *testing.T) {
 BenchmarkEnhance/group/candidate-10 100 10 ns/op
 BenchmarkEnhance/group/base-10 100 12 ns/op
 BenchmarkEnhance/group/candidate-10 100 10 ns/op
+BenchmarkEnhance/group/base-10 100 12 ns/op
+BenchmarkEnhance/group/candidate-10 100 10 ns/op
 `
 
 	report, err := Parse(strings.NewReader(input), Options{
@@ -961,6 +1048,8 @@ func TestParseAlternativesModeTradeOff(t *testing.T) {
 BenchmarkEnhance/enhanced-10 100 8 ns/op 16 B/op
 BenchmarkEnhance/original-10 100 10 ns/op 8 B/op
 BenchmarkEnhance/enhanced-10 100 8 ns/op 16 B/op
+BenchmarkEnhance/original-10 100 10 ns/op 8 B/op
+BenchmarkEnhance/enhanced-10 100 8 ns/op 16 B/op
 `
 
 	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
@@ -980,6 +1069,8 @@ func TestParseAlternativesModeTie(t *testing.T) {
 BenchmarkEnhance/enhanced-10 100 10 ns/op
 BenchmarkEnhance/original-10 100 10 ns/op
 BenchmarkEnhance/enhanced-10 100 10 ns/op
+BenchmarkEnhance/original-10 100 10 ns/op
+BenchmarkEnhance/enhanced-10 100 10 ns/op
 `
 
 	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
@@ -996,6 +1087,8 @@ func TestParseAlternativesModeOldWins(t *testing.T) {
 	t.Parallel()
 
 	input := `BenchmarkEnhance/original-10 100 8 ns/op
+BenchmarkEnhance/enhanced-10 100 10 ns/op
+BenchmarkEnhance/original-10 100 8 ns/op
 BenchmarkEnhance/enhanced-10 100 10 ns/op
 BenchmarkEnhance/original-10 100 8 ns/op
 BenchmarkEnhance/enhanced-10 100 10 ns/op
@@ -1062,6 +1155,40 @@ BenchmarkEnhance/enhanced-10 100 7 ns/op
 	got := report.Verdicts[0]
 	if got.Outcome != Inconclusive || got.ReasonCode != reasonInsufficient {
 		t.Fatalf("verdict = %+v, want insufficient-samples", got)
+	}
+}
+
+func TestParseAlternativesRawSampleBoundaries(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		count       int
+		wantReason  string
+		wantOutcome Outcome
+	}{
+		{count: StatisticalMinSamples, wantReason: reasonInsufficient, wantOutcome: Inconclusive},
+		{count: RawComparisonMinSamples, wantOutcome: NewWins},
+		{count: 8, wantOutcome: NewWins},
+		{count: RecommendedRawSamples - 1, wantOutcome: NewWins},
+		{count: RecommendedRawSamples, wantOutcome: NewWins},
+	} {
+		t.Run(fmt.Sprintf("count_%d", test.count), func(t *testing.T) {
+			t.Parallel()
+
+			report, err := Parse(strings.NewReader(rawAlternativeSamples(test.count)), Options{Mode: altMode})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got := report.Verdicts[0]
+			if got.Outcome != test.wantOutcome {
+				t.Fatalf("outcome = %s, want %s", got.Outcome, test.wantOutcome)
+			}
+
+			if got.ReasonCode != test.wantReason {
+				t.Fatalf("reason = %q, want %q", got.ReasonCode, test.wantReason)
+			}
+		})
 	}
 }
 
@@ -1181,6 +1308,9 @@ func TestParseAlternativesModeSortsMixedVerdicts(t *testing.T) {
 BenchmarkZ/enhanced-10 100 8 ns/op
 BenchmarkZ/original-10 100 10 ns/op
 BenchmarkZ/enhanced-10 100 8 ns/op
+BenchmarkZ/original-10 100 10 ns/op
+BenchmarkZ/enhanced-10 100 8 ns/op
+BenchmarkA/original-10 100 10 ns/op
 BenchmarkA/original-10 100 10 ns/op
 BenchmarkA/original-10 100 10 ns/op
 `
@@ -1202,6 +1332,8 @@ func TestParseAlternativesModeVariableSamplesUsePValueApproximation(t *testing.T
 BenchmarkEnhance/enhanced-10 100 8 ns/op
 BenchmarkEnhance/original-10 100 12 ns/op
 BenchmarkEnhance/enhanced-10 100 9 ns/op
+BenchmarkEnhance/original-10 100 11 ns/op
+BenchmarkEnhance/enhanced-10 100 8.5 ns/op
 `
 
 	report, err := Parse(strings.NewReader(input), Options{Mode: altMode, Alpha: 1})

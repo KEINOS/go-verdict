@@ -15,11 +15,11 @@ import (
 
 const (
 	alphaDefault       = 0.05
+	flagHelpLong       = "--help"
+	flagHelpShort      = "-h"
 	formatDefault      = "text"
 	minDeltaPctDefault = 0.0
 	modeDefault        = "auto"
-	rawCLIMinFields    = 2
-	rawCLIMinSamples   = 3
 )
 
 // Mockable variables for testing.
@@ -50,6 +50,15 @@ func run() error {
 }
 
 func runCLI(args []string, input io.Reader, output io.Writer) error {
+	if isHelpRequest(args) {
+		_, err := fmt.Fprint(output, flagHelpText())
+		if err != nil {
+			return fmt.Errorf("%w: %w", errWritingOutput, err)
+		}
+
+		return nil
+	}
+
 	opts, cliOpts, err := initialize(args)
 	if err != nil {
 		return err
@@ -84,16 +93,16 @@ func buildReport(input io.Reader, opts *verdict.Options, cliOpts cliOptions) (ve
 		return verdict.Report{}, fmt.Errorf("%w: %w", errParsingInput, err)
 	}
 
-	if hasTooFewRawSamples(string(inputBytes)) {
-		return verdict.Report{}, insufficientSamplesError()
-	}
-
 	report, err := verdict.Parse(bytes.NewReader(inputBytes), *opts)
 	if err != nil {
 		return verdict.Report{}, fmt.Errorf("%w: %w", errParsingInput, err)
 	}
 
 	return report, nil
+}
+
+func isHelpRequest(args []string) bool {
+	return len(args) == 1 && (args[0] == flagHelpShort || args[0] == flagHelpLong)
 }
 
 func buildRawFileReport(opts *verdict.Options, cliOpts cliOptions) (verdict.Report, error) {
@@ -167,37 +176,12 @@ func suggestedPath(label string) string {
 }
 
 func insufficientSamplesError() error {
-	return fmt.Errorf("%w: run benchmarks with -count=10 or more", errInsufficientSamples)
-}
-
-func hasTooFewRawSamples(input string) bool {
-	counts := map[string]int{}
-
-	for rawLine := range strings.SplitSeq(input, "\n") {
-		line := strings.TrimSpace(rawLine)
-		if !strings.HasPrefix(line, "Benchmark") || !strings.Contains(line, "/") {
-			continue
-		}
-
-		fields := strings.Fields(line)
-		if len(fields) < rawCLIMinFields {
-			continue
-		}
-
-		counts[fields[0]]++
-	}
-
-	if len(counts) == 0 {
-		return false
-	}
-
-	for _, count := range counts {
-		if count < rawCLIMinSamples {
-			return true
-		}
-	}
-
-	return false
+	return fmt.Errorf(
+		"%w: need at least %d samples per benchmark side; recommend -count=%d or more for stable results",
+		errInsufficientSamples,
+		verdict.RawComparisonMinSamples,
+		verdict.RecommendedRawSamples,
+	)
 }
 
 func writeReport(report verdict.Report, cliOpts cliOptions, output io.Writer) error {
@@ -260,6 +244,9 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 	flagSet.BoolVar(&cliOpts.verbose,
 		"verbose", false,
 		"include verdict reason and metric details in text output")
+	flagSet.Usage = func() {
+		_, _ = fmt.Fprint(flagSet.Output(), flagHelpText())
+	}
 
 	err := flagSet.Parse(args)
 	if err != nil {
@@ -271,6 +258,38 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 	}
 
 	return &opts, cliOpts, nil
+}
+
+func flagHelpText() string {
+	return fmt.Sprintf(
+		`Usage: verdict [options]
+
+Raw benchmark comparisons need at least %d samples per benchmark side.
+For stable results, run benchmarks with -count=%d or more.
+
+Options:
+  --format text|json
+      Output format. Default: text.
+  --mode auto|benchstat|alternatives
+      Input mode. Default: auto.
+  --verbose
+      Include verdict reason and metric details in text output.
+  -a file
+      Raw benchmark file for side A.
+  -b file
+      Raw benchmark file for side B.
+  --baseline name
+      Baseline sub-benchmark name for alternatives mode.
+  --candidate name
+      Candidate sub-benchmark name for alternatives mode.
+  --alpha value
+      P-value threshold for statistical significance. Default: 0.05.
+  --min-delta value
+      Minimum absolute delta percentage to treat as a practical difference. Default: 0.0.
+`,
+		verdict.RawComparisonMinSamples,
+		verdict.RecommendedRawSamples,
+	)
 }
 
 func exitOnError(err error) {
