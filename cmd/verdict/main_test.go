@@ -137,7 +137,7 @@ func TestRunCLIHelpWritesSamplePolicy(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"Usage: verdict [command] [options]",
+		"Usage:\n  verdict [command] [options]",
 		"Commands:\n  skill",
 		"Options:\n  --format text|json",
 	} {
@@ -183,6 +183,20 @@ func TestRunCLISkillNilOutputContainsContext(t *testing.T) {
 	if !errors.Is(err, errWritingOutput) {
 		t.Fatalf("error = %v, want %v", err, errWritingOutput)
 	}
+}
+
+func TestRunCLISkillRejectsExtraArgs(t *testing.T) {
+	t.Parallel()
+
+	err := runCLI([]string{commandSkill, "extra"}, strings.NewReader("ignored"), &strings.Builder{})
+	require.ErrorIs(t, err, errUnexpectedCommandArgs)
+}
+
+func TestRunCLIUnknownCommand(t *testing.T) {
+	t.Parallel()
+
+	err := runCLI([]string{"export-skill"}, strings.NewReader("ignored"), &strings.Builder{})
+	require.ErrorIs(t, err, errUnknownCommand)
 }
 
 func TestRunCLIParseErrorContainsContext(t *testing.T) {

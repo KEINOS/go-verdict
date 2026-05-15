@@ -35,6 +35,8 @@ var (
 var (
 	errBenchmarkSetMismatch = errors.New("inconclusive: benchmark names differ")
 	errInsufficientSamples  = errors.New("insufficient samples")
+	errUnexpectedCommandArgs = errors.New("skill command does not accept extra arguments")
+	errUnknownCommand       = errors.New("unknown command")
 	errUseBothAB            = errors.New("use both -a and -b to compare raw benchmark files")
 	errUnknownFormat        = errors.New("unknown format")
 	errParsingInput         = errors.New("parsing input")
@@ -52,7 +54,15 @@ func run() error {
 }
 
 func runCLI(args []string, input io.Reader, output io.Writer) error {
-	if isSkillRequest(args) {
+	if command, hasCommand := topLevelCommand(args); hasCommand {
+		if command != commandSkill {
+			return fmt.Errorf("%w: %s", errUnknownCommand, command)
+		}
+
+		if len(args) != 1 {
+			return errUnexpectedCommandArgs
+		}
+
 		return writeString(output, verdictskill.Text)
 	}
 
@@ -119,8 +129,12 @@ func isHelpRequest(args []string) bool {
 	return len(args) == 1 && (args[0] == flagHelpShort || args[0] == flagHelpLong)
 }
 
-func isSkillRequest(args []string) bool {
-	return len(args) == 1 && args[0] == commandSkill
+func topLevelCommand(args []string) (string, bool) {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return "", false
+	}
+
+	return args[0], true
 }
 
 func buildRawFileReport(opts *verdict.Options, cliOpts cliOptions) (verdict.Report, error) {
