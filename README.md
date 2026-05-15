@@ -38,6 +38,7 @@ It is useful when you want a clear answer after changing code:
 - [Verdicts](#verdicts)
 - [Inconclusive Results](#inconclusive-results)
 - [Library Usage](#library-usage)
+- [AI Agent Skill](#ai-agent-skill)
 - [Development](#development)
 - [License](#license)
 
@@ -267,38 +268,42 @@ Example JSON:
 ## CLI Options
 
 ```text
-Usage: verdict [options]
+Usage: verdict [command] [options]
 
 Raw benchmark comparisons need at least 3 samples per benchmark side.
 For stable results, run benchmarks with -count=10 or more.
 
+Commands:
+  skill
+      Print the AI Agent skill text.
+
 Options:
---format text|json
-    Output format. Default: text.
+  --format text|json
+      Output format. Default: text.
 
---mode auto|benchstat|alternatives
-    Input mode. Default: auto.
+  --mode auto|benchstat|alternatives
+      Input mode. Default: auto.
 
---verbose
-    Include verdict reason and metric details in text output.
+  --verbose
+      Include verdict reason and metric details in text output.
 
--a file
-    Raw benchmark file for side A.
+  -a file
+      Raw benchmark file for side A.
 
--b file
-    Raw benchmark file for side B.
+  -b file
+      Raw benchmark file for side B.
 
---baseline name
-    Baseline sub-benchmark name for alternatives mode.
+  --baseline name
+      Baseline sub-benchmark name for alternatives mode.
 
---candidate name
-    Candidate sub-benchmark name for alternatives mode.
+  --candidate name
+      Candidate sub-benchmark name for alternatives mode.
 
---alpha value
-    P-value threshold for statistical significance. Default: 0.05.
+  --alpha value
+      P-value threshold for statistical significance. Default: 0.05.
 
---min-delta value
-    Minimum absolute delta percentage to treat as a practical difference. Default: 0.0.
+  --min-delta value
+      Minimum absolute delta percentage to treat as a practical difference. Default: 0.0.
 ```
 
 Example with a stricter practical threshold:
@@ -374,6 +379,16 @@ func main() {
  }
 }
 ```
+
+## AI Agent Skill
+
+To give an AI agent guidance for using `verdict`:
+
+```sh
+verdict skill > SKILL.md
+```
+
+The canonical source is [skill/verdict/SKILL.md](skill/verdict/SKILL.md).
 
 ## Development
 

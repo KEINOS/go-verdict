@@ -135,12 +135,51 @@ func TestRunCLIHelpWritesSamplePolicy(t *testing.T) {
 			t.Fatalf("help = %q, want %q", out.String(), want)
 		}
 	}
+
+	for _, want := range []string{
+		"Usage: verdict [command] [options]",
+		"Commands:\n  skill",
+		"Options:\n  --format text|json",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("help = %q, want %q", out.String(), want)
+		}
+	}
 }
 
 func TestRunCLIHelpWriteErrorContainsContext(t *testing.T) {
 	t.Parallel()
 
 	err := runCLI([]string{flagHelpLong}, strings.NewReader(""), failingWriter{})
+	if !errors.Is(err, errWritingOutput) {
+		t.Fatalf("error = %v, want %v", err, errWritingOutput)
+	}
+}
+
+func TestRunCLISkillMatchesCanonicalSkill(t *testing.T) {
+	t.Parallel()
+
+	want, err := os.ReadFile(filepath.Join("..", "..", "skill", "verdict", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var out strings.Builder
+
+	err = runCLI([]string{commandSkill}, strings.NewReader("ignored"), &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if out.String() != string(want) {
+		t.Fatal("skill output does not match canonical SKILL.md")
+	}
+}
+
+func TestRunCLISkillNilOutputContainsContext(t *testing.T) {
+	t.Parallel()
+
+	err := runCLI([]string{commandSkill}, strings.NewReader("ignored"), nil)
 	if !errors.Is(err, errWritingOutput) {
 		t.Fatalf("error = %v, want %v", err, errWritingOutput)
 	}

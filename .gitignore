@@ -2,5 +2,9 @@ dist
 testdata/*.txt
 *.md
 !README.md
+!skill/
+!skill/verdict/
+!skill/verdict/SKILL.md
+!skill/verdict/README.md
 .claude
 .vscode

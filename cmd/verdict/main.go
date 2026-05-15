@@ -10,11 +10,13 @@ import (
 	"os"
 	"strings"
 
+	verdictskill "github.com/KEINOS/go-verdict/skill/verdict"
 	"github.com/KEINOS/go-verdict/verdict"
 )
 
 const (
 	alphaDefault       = 0.05
+	commandSkill       = "skill"
 	flagHelpLong       = "--help"
 	flagHelpShort      = "-h"
 	formatDefault      = "text"
@@ -50,13 +52,12 @@ func run() error {
 }
 
 func runCLI(args []string, input io.Reader, output io.Writer) error {
-	if isHelpRequest(args) {
-		_, err := fmt.Fprint(output, flagHelpText())
-		if err != nil {
-			return fmt.Errorf("%w: %w", errWritingOutput, err)
-		}
+	if isSkillRequest(args) {
+		return writeString(output, verdictskill.Text)
+	}
 
-		return nil
+	if isHelpRequest(args) {
+		return writeString(output, flagHelpText())
 	}
 
 	opts, cliOpts, err := initialize(args)
@@ -101,8 +102,25 @@ func buildReport(input io.Reader, opts *verdict.Options, cliOpts cliOptions) (ve
 	return report, nil
 }
 
+func writeString(output io.Writer, text string) error {
+	if output == nil {
+		return fmt.Errorf("%w: nil output writer", errWritingOutput)
+	}
+
+	_, err := fmt.Fprint(output, text)
+	if err != nil {
+		return fmt.Errorf("%w: %w", errWritingOutput, err)
+	}
+
+	return nil
+}
+
 func isHelpRequest(args []string) bool {
 	return len(args) == 1 && (args[0] == flagHelpShort || args[0] == flagHelpLong)
+}
+
+func isSkillRequest(args []string) bool {
+	return len(args) == 1 && args[0] == commandSkill
 }
 
 func buildRawFileReport(opts *verdict.Options, cliOpts cliOptions) (verdict.Report, error) {
@@ -262,10 +280,18 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 
 func flagHelpText() string {
 	return fmt.Sprintf(
-		`Usage: verdict [options]
+		`Small command for Go benchmarks. It reads benchmark results and prints an A/B verdict.
 
-Raw benchmark comparisons need at least %d samples per benchmark side.
-For stable results, run benchmarks with -count=%d or more.
+Usage:
+  verdict [command] [options]
+
+Note:
+  Raw benchmark comparisons need at least %d samples per benchmark side.
+  For stable results, run benchmarks with -count=%d or more.
+
+Commands:
+  skill
+      Print the AI Agent skill text.
 
 Options:
   --format text|json
