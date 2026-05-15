@@ -110,13 +110,15 @@ The outcome meaning is from the new option side:
 | `trade-off` | Some metrics improved, but other metrics regressed. |
 | `inconclusive` | The input does not contain enough comparable samples. |
 
-Raw benchmark comparison supports `ns/op`, `B/op`, and `allocs/op` from `go test` output. It computes deltas and p-values from repeated samples, then applies the same `--alpha`, `--min-delta`, and verdict rules as before/after comparison. It needs at least 3 samples per benchmark side; if there are fewer samples, it returns `inconclusive`.
+Raw benchmark comparison supports `ns/op`, `B/op`, and `allocs/op` from `go test` output. It computes deltas and approximate p-values from repeated samples, then applies the same `--alpha`, `--min-delta`, and verdict rules as before/after comparison. It needs at least 3 samples per benchmark side; if there are fewer samples, it returns `inconclusive`.
 
 Run with enough samples. `-count=8` is accepted for quick local checks, but `-count=10` or more is recommended for stable results. If you use only `-count=2`, `verdict` asks you to run more samples:
 
 ```text
 error: insufficient samples: need at least 3 samples per benchmark side; recommend -count=10 or more for stable results
 ```
+
+The raw-sample p-value is a pragmatic normal approximation from the two sample means and variances. Very small accepted sample counts, such as 3 to 5 per side, can be useful for quick feedback but are weaker evidence than the recommended `-count=10` or more. Benchmark distributions can be noisy or non-normal, so treat close results as guidance to collect more samples.
 
 ### Named File A/B Comparison
 
@@ -300,10 +302,10 @@ Options:
       Candidate sub-benchmark name for alternatives mode.
 
   --alpha value
-      P-value threshold for statistical significance. Default: 0.05.
+      P-value threshold for statistical significance. Must be greater than 0 and at most 1. Default: 0.05.
 
   --min-delta value
-      Minimum absolute delta percentage to treat as a practical difference. Default: 0.0.
+      Minimum absolute delta percentage to treat as a practical difference. Must be non-negative. Default: 0.0.
 ```
 
 Example with a stricter practical threshold:
@@ -313,6 +315,8 @@ benchstat old.txt new.txt | verdict --alpha 0.05 --min-delta 2.0
 ```
 
 With this command, a metric must have `p <= 0.05` and at least `2.0%` change to count as improved or worsened.
+
+For raw benchmark input, p-values are approximate and become more trustworthy as sample counts rise.
 
 ## Verdicts
 
@@ -379,6 +383,8 @@ func main() {
  }
 }
 ```
+
+`verdict.Options{}` uses the default alpha of `0.05`. If you set `Alpha`, use a finite value greater than `0` and at most `1`; `MinDeltaPct` must be finite and non-negative.
 
 ## AI Agent Skill
 

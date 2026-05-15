@@ -14,10 +14,13 @@ import (
 
 const (
 	flagFormat   = "--format"
+	flagAlpha    = "--alpha"
+	flagMinDelta = "--min-delta"
 	flagMode     = "--mode"
 	formatText   = "text"
 	formatJSON   = "json"
 	modeAlt      = "alternatives"
+	optionAlpha  = "alpha"
 	winningInput = "name          old time/op  new time/op  delta\n" +
 		"Foo-8         10.0ns ± 1%   8.0ns ± 1%  -20.00% (p=0.001 n=10+10)\n"
 	alternativesInput = "BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
@@ -192,6 +195,29 @@ func TestRunCLIParseErrorContainsContext(t *testing.T) {
 		"invalid input should return parse error")
 	require.Contains(t, err.Error(), "parsing input",
 		"parse errors should include parsing input context")
+}
+
+func TestRunCLIRejectsInvalidStatisticalOptions(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "zero alpha", args: []string{flagAlpha, "0"}, want: optionAlpha},
+		{name: "negative alpha", args: []string{flagAlpha, "-0.1"}, want: optionAlpha},
+		{name: "alpha above one", args: []string{flagAlpha, "1.1"}, want: optionAlpha},
+		{name: "negative min delta", args: []string{flagMinDelta, "-1"}, want: "min-delta"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := runCLI(test.args, strings.NewReader(winningInput), &strings.Builder{})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), test.want)
+		})
+	}
 }
 
 func TestRunCLIBenchmarkSetMismatchGuidance(t *testing.T) {

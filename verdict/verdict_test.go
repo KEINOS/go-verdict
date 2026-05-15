@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"testing"
 
@@ -11,11 +12,16 @@ import (
 )
 
 const (
-	benchmarkFoo             = "Foo-8"
+	benchmarkFoo          = "Foo-8"
+	benchstatNewWinsInput = "name          old time/op  new time/op  delta\n" +
+		"Foo-8         10.0ns ± 1%   8.0ns ± 1%  -20.00% (p=0.001 n=10+10)\n"
 	labelCandidate           = "candidate"
 	labelNew                 = "new"
 	labelNewTxt              = "new.txt"
 	labelOld                 = "old"
+	optionAlphaName          = "alpha"
+	optionMinDeltaName       = "min-delta"
+	rawBadValue              = "bad"
 	reasonSame               = "same"
 	altMode                  = "alternatives"
 	reasonMalformedBenchmark = "malformed-benchmark"
@@ -102,11 +108,7 @@ Foo-8              10.0n ± 1%             8.0n ± 1%  -20.00% (p=0.001 n=10)
 func TestParseExplicitBenchstatMode(t *testing.T) {
 	t.Parallel()
 
-	input := `name          old time/op  new time/op  delta
-Foo-8         10.0ns ± 1%   8.0ns ± 1%  -20.00% (p=0.001 n=10+10)
-`
-
-	report, err := Parse(strings.NewReader(input), Options{Mode: modeBenchstat})
+	report, err := Parse(strings.NewReader(benchstatNewWinsInput), Options{Mode: modeBenchstat})
 	require.NoError(t, err)
 
 	if report.Verdicts[0].Winner != labelNew {
@@ -140,6 +142,38 @@ Foo-8          1.00n      1.10n
 	if report.Verdicts[0].ReasonCode != "missing-pvalue" {
 		require.Failf(t, "assertion failed", "reasonCode = %q, want %q", report.Verdicts[0].ReasonCode, "missing-pvalue")
 	}
+}
+
+func TestParseRejectsInvalidOptions(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name string
+		opts Options
+		want string
+	}{
+		{name: "negative alpha", opts: Options{Alpha: -0.1}, want: optionAlphaName},
+		{name: "alpha above one", opts: Options{Alpha: 1.1}, want: optionAlphaName},
+		{name: "nan alpha", opts: Options{Alpha: math.NaN()}, want: optionAlphaName},
+		{name: "negative min delta", opts: Options{MinDeltaPct: -0.1}, want: optionMinDeltaName},
+		{name: "infinite min delta", opts: Options{MinDeltaPct: math.Inf(1)}, want: optionMinDeltaName},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := Parse(strings.NewReader(benchstatNewWinsInput), test.opts)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), test.want)
+		})
+	}
+}
+
+func TestParseZeroValueOptionsUseDefaults(t *testing.T) {
+	t.Parallel()
+
+	report, err := Parse(strings.NewReader(benchstatNewWinsInput), Options{})
+	require.NoError(t, err)
+	require.Equal(t, NewWins, report.Verdicts[0].Outcome)
 }
 
 func TestHigherRateMetricTreatsPositiveDeltaAsImproved(t *testing.T) {
@@ -596,7 +630,7 @@ func TestPrivateEdgeBranches(t *testing.T) {
 		require.Failf(t, "assertion failed", "index = %d, want -1", got)
 	}
 
-	for _, rawDelta := range []string{"", "~", "?", "bad"} {
+	for _, rawDelta := range []string{"", "~", "?", rawBadValue} {
 		if _, ok := parseDeltaPercent(rawDelta); ok {
 			require.Failf(t, "assertion failed", "delta %q parsed, want false", rawDelta)
 		}
@@ -900,6 +934,18 @@ func TestCompareRawFilesReadErrors(t *testing.T) {
 	}
 }
 
+func TestCompareRawFilesRejectsInvalidOptions(t *testing.T) {
+	t.Parallel()
+
+	_, err := CompareRawFiles(
+		strings.NewReader(rawFileSamples("BenchmarkExampleFast", 1, RawComparisonMinSamples)),
+		strings.NewReader(rawFileSamples("BenchmarkExampleSlow", 10, RawComparisonMinSamples)),
+		Options{Alpha: math.Inf(1)},
+	)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "alpha")
+}
+
 func TestParseTextBenchmarkSetMismatchReturnsLabels(t *testing.T) {
 	t.Parallel()
 
@@ -1173,6 +1219,37 @@ func TestParseAlternativesModeMalformedIteration(t *testing.T) {
 	}
 }
 
+func TestParseAlternativesModeMalformedSupportedMetricValue(t *testing.T) {
+	t.Parallel()
+
+	report, err := Parse(
+		strings.NewReader("BenchmarkEnhance/original-10 100 nope ns/op\n"),
+		Options{Mode: altMode},
+	)
+	require.NoError(t, err)
+
+	got := report.Verdicts[0]
+	if got.Outcome != Inconclusive || got.ReasonCode != reasonMalformedBenchmark {
+		require.Failf(t, "assertion failed", "verdict = %+v, want malformed-benchmark", got)
+	}
+}
+
+func TestCompareRawFilesMalformedSupportedMetricValue(t *testing.T) {
+	t.Parallel()
+
+	report, err := CompareRawFiles(
+		strings.NewReader("BenchmarkExampleFast-10 100 nope ns/op\n"),
+		strings.NewReader(strings.Repeat("BenchmarkExampleSlow-10 100 10 ns/op\n", 10)),
+		Options{},
+	)
+	require.NoError(t, err)
+
+	got := report.Verdicts[0]
+	if got.Outcome != Inconclusive || got.ReasonCode != reasonMalformedBenchmark {
+		require.Failf(t, "assertion failed", "verdict = %+v, want malformed-benchmark", got)
+	}
+}
+
 func TestParseAlternativesModeNoBenchmarkRows(t *testing.T) {
 	t.Parallel()
 
@@ -1263,9 +1340,15 @@ func TestPrivateAlternativeBranches(t *testing.T) {
 func TestPrivateAlternativeMathBranches(t *testing.T) {
 	t.Parallel()
 
-	metrics := parseRawMetrics([]string{"bad", metricNanosecondsPerOp, "10", metricNanosecondsPerOp})
+	metrics, ok := parseRawMetrics([]string{rawBadValue, "MB/s", "10", metricNanosecondsPerOp})
+	require.True(t, ok, "unsupported bad metric value should not make the row malformed")
+
 	if metrics[metricSecPerOp] != 10 {
 		require.Failf(t, "assertion failed", "metrics = %+v, want valid metric after bad value", metrics)
+	}
+
+	if _, ok := parseRawMetrics([]string{rawBadValue, metricNanosecondsPerOp}); ok {
+		require.FailNow(t, "supported metric with bad value should be malformed")
 	}
 
 	if got := variance([]float64{1}, 1); got != 0 {

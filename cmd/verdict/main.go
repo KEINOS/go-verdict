@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"strings"
 
@@ -33,16 +34,18 @@ var (
 
 // Pre-defined errors.
 var (
-	errBenchmarkSetMismatch = errors.New("inconclusive: benchmark names differ")
-	errInsufficientSamples  = errors.New("insufficient samples")
+	errBenchmarkSetMismatch  = errors.New("inconclusive: benchmark names differ")
+	errInsufficientSamples   = errors.New("insufficient samples")
 	errUnexpectedCommandArgs = errors.New("skill command does not accept extra arguments")
-	errUnknownCommand       = errors.New("unknown command")
-	errUseBothAB            = errors.New("use both -a and -b to compare raw benchmark files")
-	errUnknownFormat        = errors.New("unknown format")
-	errParsingInput         = errors.New("parsing input")
-	errParsingFlags         = errors.New("parsing flags")
-	errUnknownMode          = errors.New("unknown mode")
-	errWritingOutput        = errors.New("writing output")
+	errUnknownCommand        = errors.New("unknown command")
+	errUseBothAB             = errors.New("use both -a and -b to compare raw benchmark files")
+	errUnknownFormat         = errors.New("unknown format")
+	errParsingInput          = errors.New("parsing input")
+	errParsingFlags          = errors.New("parsing flags")
+	errInvalidAlpha          = errors.New("alpha must be greater than 0 and at most 1")
+	errInvalidMinDelta       = errors.New("min-delta must be finite and non-negative")
+	errUnknownMode           = errors.New("unknown mode")
+	errWritingOutput         = errors.New("writing output")
 )
 
 func main() {
@@ -289,7 +292,22 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 		return nil, cliOptions{}, errUnknownMode
 	}
 
+	if err := validateCLIOptions(opts); err != nil {
+		return nil, cliOptions{}, err
+	}
+
 	return &opts, cliOpts, nil
+}
+
+func validateCLIOptions(opts verdict.Options) error {
+	switch {
+	case math.IsNaN(opts.Alpha) || math.IsInf(opts.Alpha, 0) || opts.Alpha <= 0 || opts.Alpha > 1:
+		return errInvalidAlpha
+	case math.IsNaN(opts.MinDeltaPct) || math.IsInf(opts.MinDeltaPct, 0) || opts.MinDeltaPct < 0:
+		return errInvalidMinDelta
+	default:
+		return nil
+	}
 }
 
 func flagHelpText() string {
@@ -323,10 +341,10 @@ Options:
   --candidate name
       Candidate sub-benchmark name for alternatives mode.
   --alpha value
-      P-value threshold for statistical significance. Default: 0.05.
+      P-value threshold for statistical significance. Must be greater than 0 and at most 1. Default: 0.05.
   --min-delta value
-      Minimum absolute delta percentage to treat as a practical difference. Default: 0.0.
-`,
+      Minimum absolute delta percentage to treat as a practical difference. Must be non-negative. Default: 0.0.
+	`,
 		verdict.RawComparisonMinSamples,
 		verdict.RecommendedRawSamples,
 	)

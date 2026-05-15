@@ -45,6 +45,8 @@ const (
 )
 
 // Options controls the statistical and practical thresholds used by Parse.
+// Alpha defaults to 0.05 when left zero; non-zero Alpha values must be finite
+// and greater than 0 and at most 1. MinDeltaPct must be finite and non-negative.
 type Options struct {
 	Alpha       float64
 	MinDeltaPct float64
@@ -169,16 +171,20 @@ var (
 	errScanningTextInput = errors.New("scanning benchstat text input")
 	errScanningRawInput  = errors.New("scanning raw alternatives input")
 	errScanningRawFile   = errors.New("scanning raw benchmark file input")
+	errInvalidOptions    = errors.New("invalid options")
 	errNoComparisonRows  = errors.New("no benchstat comparison rows found")
 	errWritingTextOutput = errors.New("writing text report")
 	errWritingJSONOutput = errors.New("writing json report")
 )
 
 // Parse reads benchstat output and returns a benchmark verdict report.
-func Parse(r io.Reader, opts Options) (Report, error) {
+func Parse(reader io.Reader, opts Options) (Report, error) {
 	opts = normalizeOptions(opts)
+	if err := validateOptions(opts); err != nil {
+		return Report{}, err
+	}
 
-	input, err := io.ReadAll(r)
+	input, err := io.ReadAll(reader)
 	if err != nil {
 		return Report{}, fmt.Errorf("%w: %w", errReadingInput, err)
 	}
@@ -225,6 +231,17 @@ func normalizeOptions(opts Options) Options {
 	}
 
 	return opts
+}
+
+func validateOptions(opts Options) error {
+	switch {
+	case math.IsNaN(opts.Alpha) || math.IsInf(opts.Alpha, 0) || opts.Alpha <= 0 || opts.Alpha > 1:
+		return fmt.Errorf("%w: alpha must be greater than 0 and at most 1", errInvalidOptions)
+	case math.IsNaN(opts.MinDeltaPct) || math.IsInf(opts.MinDeltaPct, 0) || opts.MinDeltaPct < 0:
+		return fmt.Errorf("%w: min-delta must be finite and non-negative", errInvalidOptions)
+	default:
+		return nil
+	}
 }
 
 func parseText(input string, opts Options) (Report, error) {
@@ -430,6 +447,9 @@ func parseAlternatives(input string, opts Options) (Report, error) {
 // CompareRawFiles compares two raw go test benchmark result files as explicit A/B inputs.
 func CompareRawFiles(aReader io.Reader, bReader io.Reader, opts Options) (Report, error) {
 	opts = normalizeOptions(opts)
+	if err := validateOptions(opts); err != nil {
+		return Report{}, err
+	}
 
 	aState, err := parseRawFile(aReader)
 	if err != nil {
@@ -538,7 +558,12 @@ func parseRawFileBenchmarkLine(line string) (string, map[string]float64, bool) {
 		return "", nil, false
 	}
 
-	return name, parseRawMetrics(fields[2:]), true
+	metrics, ok := parseRawMetrics(fields[2:])
+	if !ok {
+		return "", nil, false
+	}
+
+	return name, metrics, true
 }
 
 func rawFileInconclusive(aState, bState rawFileParseState) *BenchmarkVerdict {
@@ -624,7 +649,10 @@ func parseRawBenchmarkLine(line string) (rawBenchmarkSample, bool) {
 		return rawBenchmarkSample{}, false
 	}
 
-	metrics := parseRawMetrics(fields[2:])
+	metrics, ok := parseRawMetrics(fields[2:])
+	if !ok {
+		return rawBenchmarkSample{}, false
+	}
 
 	return rawBenchmarkSample{
 		parent:  parent,
@@ -660,22 +688,24 @@ func trimCPUSuffix(name string) string {
 	return name[:index]
 }
 
-func parseRawMetrics(fields []string) map[string]float64 {
+func parseRawMetrics(fields []string) (map[string]float64, bool) {
 	metrics := map[string]float64{}
 
 	for index := 0; index+1 < len(fields); index += rawBenchmarkValueUnit {
-		value, err := strconv.ParseFloat(fields[index], 64)
-		if err != nil {
+		metric, ok := normalizeRawMetric(fields[index+1])
+		if !ok {
 			continue
 		}
 
-		metric, ok := normalizeRawMetric(fields[index+1])
-		if ok {
-			metrics[metric] = value
+		value, err := strconv.ParseFloat(fields[index], 64)
+		if err != nil {
+			return nil, false
 		}
+
+		metrics[metric] = value
 	}
 
-	return metrics
+	return metrics, true
 }
 
 func normalizeRawMetric(metric string) (string, bool) {
@@ -860,6 +890,7 @@ func compareAlternativeMetric(
 }
 
 func mean(values []float64) float64 {
+	// Callers enforce non-empty sample sets before statistical comparison.
 	total := 0.0
 	for _, value := range values {
 		total += value
@@ -891,6 +922,8 @@ func deltaPercent(baselineMean, candidateMean float64) float64 {
 	return ((candidateMean - baselineMean) / baselineMean) * percentScale
 }
 
+// pValueApproximation uses a pragmatic normal approximation from repeated
+// samples. It is most useful with the recommended raw sample count or more.
 func pValueApproximation(baseline, candidate []float64) float64 {
 	baselineMean := mean(baseline)
 	candidateMean := mean(candidate)
@@ -902,6 +935,7 @@ func pValueApproximation(baseline, candidate []float64) float64 {
 	)
 
 	if standardError == 0 {
+		// Exact zero represents zero variance in both sample sets.
 		if baselineMean == candidateMean {
 			return 1
 		}
@@ -1261,6 +1295,7 @@ func parseComparisonLine(line, metric string, opts Options) (Comparison, bool) {
 
 func classify(metric string, delta float64, significant bool) Direction {
 	if !significant || delta == 0 {
+		// Exact zero is a final guard after significance and min-delta checks.
 		return Same
 	}
 
