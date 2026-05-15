@@ -4,7 +4,9 @@
 
 ```sh
 # Compare benchmark results before and after a change:
+# (`BenchmarkExampleFast()` + 10 iterations in this case)
 benchstat old.txt new.txt | verdict
+ExampleFast-10: tie
 ```
 
 ```sh
@@ -21,20 +23,9 @@ It is useful when you want a clear answer after changing code:
 - Is there a trade-off between metrics?
 - Is another function better for the same job?
 
-## Features
-
-- Supports modern `benchstat` CSV-style output.
-- Supports text `benchstat` output that includes `p=`.
-- Auto-detects raw `go test -bench` output for local alternative comparison.
-- Compares two raw benchmark files with `-a` and `-b`.
-- Prints one concise verdict line by default, with details available via `--verbose`.
-- Uses both statistical significance and a practical delta threshold.
-- Handles lower-is-better metrics such as `sec/op`, `ns/op`, `B/op`, and `allocs/op`.
-- Handles higher-is-better metrics such as `MB/s`, `ops/s`, and other `/s` rates.
-- Returns stable outcomes for CI and scripts.
-
 ## Contents
 
+- [Features](#features)
 - [Workflows](#workflows)
   - [Local Alternative Comparison](#local-alternative-comparison)
   - [Named File A/B Comparison](#named-file-ab-comparison)
@@ -49,6 +40,18 @@ It is useful when you want a clear answer after changing code:
 - [Library Usage](#library-usage)
 - [Development](#development)
 - [License](#license)
+
+## Features
+
+- Supports modern `benchstat` CSV-style output.
+- Supports text `benchstat` output that includes `p=`.
+- Auto-detects raw `go test -bench` output for local alternative comparison.
+- Compares two raw benchmark files with `-a` and `-b`.
+- Prints one concise verdict line by default, with details available via `--verbose`.
+- Uses both statistical significance and a practical delta threshold.
+- Handles lower-is-better metrics such as `sec/op`, `ns/op`, `B/op`, and `allocs/op`.
+- Handles higher-is-better metrics such as `MB/s`, `ops/s`, and other `/s` rates.
+- Returns stable outcomes for CI and scripts.
 
 ## Workflows
 
