@@ -1,23 +1,24 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestExampleSlow(t *testing.T) {
-	if !ExampleSlow() {
-		t.Error("ExampleSlow() should return true")
-	}
+	require.True(t, ExampleSlow(),
+		"ExampleSlow() should return true")
 }
 
 func TestExampleFast(t *testing.T) {
-	if !ExampleFast() {
-		t.Error("ExampleFast() should return true")
-	}
+	require.True(t, ExampleFast(),
+		"ExampleFast() should return true")
 }
 
 func TestExampleOriginal(t *testing.T) {
-	if ExampleOriginal() != ExampleEnhanced() {
-		t.Error("ExampleOriginal() should match ExampleEnhanced()")
-	}
+	require.Equal(t, ExampleOriginal(), ExampleEnhanced(),
+		"ExampleOriginal() should match ExampleEnhanced()")
 }
 
 func BenchmarkExampleSlow(b *testing.B) {

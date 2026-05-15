@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_is_embeded(t *testing.T) {
+func Test_is_embedded(t *testing.T) {
 	t.Parallel()
 
 	expectText, err := os.ReadFile("SKILL.md")
