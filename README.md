@@ -33,6 +33,23 @@ It is useful when you want a clear answer after changing code:
 - Handles higher-is-better metrics such as `MB/s`, `ops/s`, and other `/s` rates.
 - Returns stable outcomes for CI and scripts.
 
+## Contents
+
+- [Workflows](#workflows)
+  - [Local Alternative Comparison](#local-alternative-comparison)
+  - [Named File A/B Comparison](#named-file-ab-comparison)
+  - [PR or Before/After Comparison](#pr-or-beforeafter-comparison)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Output Formats](#output-formats)
+- [CLI Options](#cli-options)
+- [Verdicts](#verdicts)
+- [Inconclusive Results](#inconclusive-results)
+- [Library Usage](#library-usage)
+- [Development](#development)
+- [License](#license)
+
 ## Workflows
 
 `verdict` is designed around three common workflows.

@@ -2,3 +2,5 @@ dist
 testdata/*.txt
 *.md
 !README.md
+.claude
+.vscode
