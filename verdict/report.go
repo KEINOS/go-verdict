@@ -1,0 +1,294 @@
+package verdict
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+const (
+	metricSecPerOp = "sec/op"
+)
+
+var (
+	errWritingTextOutput = errors.New("writing text report")
+	errWritingJSONOutput = errors.New("writing json report")
+)
+
+func displayLabel(label string) string {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return label
+	}
+
+	base := filepath.Base(label)
+	if base == "." || base == string(filepath.Separator) {
+		return label
+	}
+
+	return base
+}
+
+func inconclusiveReport(reason string) Report {
+	return labeledInconclusiveReport(reason, "", "")
+}
+
+func labeledInconclusiveReport(reason, baselineLabel, candidateLabel string) Report {
+	return Report{
+		Verdicts: []BenchmarkVerdict{{
+			Benchmark:      "all",
+			Outcome:        Inconclusive,
+			BaselineLabel:  baselineLabel,
+			CandidateLabel: candidateLabel,
+			Metrics:        nil,
+			Reason:         "inconclusive input",
+			ReasonCode:     reason,
+		}},
+	}
+}
+
+func classify(metric string, delta float64, significant bool) Direction {
+	if !significant || delta == 0 {
+		// Exact zero is a final guard after significance and min-delta checks.
+		return Same
+	}
+
+	if lowerIsBetter(metric) == (delta < 0) {
+		return Improved
+	}
+
+	return Worsened
+}
+
+func lowerIsBetter(metric string) bool {
+	metric = strings.ToLower(metric)
+
+	return !strings.HasSuffix(metric, "/s") &&
+		metric != "speed" &&
+		metric != "throughput" &&
+		metric != "rate"
+}
+
+func normalizeMetric(metric string) string {
+	metric = strings.TrimSpace(metric)
+
+	switch strings.ToLower(metric) {
+	case "time/op", "ns/op":
+		return metricSecPerOp
+	case "bytes/op", "b/op":
+		return metricBytesPerOp
+	default:
+		return metric
+	}
+}
+
+func evaluate(rows []Comparison) Report {
+	grouped := map[string][]Comparison{}
+
+	for _, row := range rows {
+		grouped[row.Benchmark] = append(grouped[row.Benchmark], row)
+	}
+
+	names := make([]string, 0, len(grouped))
+	for name := range grouped {
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	verdicts := make([]BenchmarkVerdict, 0, len(names))
+
+	for _, name := range names {
+		metrics := grouped[name]
+		sort.Slice(metrics, func(i, j int) bool {
+			return metrics[i].Metric < metrics[j].Metric
+		})
+
+		improved, worsened := 0, 0
+
+		for _, metric := range metrics {
+			switch metric.Direction {
+			case Improved:
+				improved++
+			case Worsened:
+				worsened++
+			case Same:
+				continue
+			}
+		}
+
+		outcome, reason := decide(improved, worsened, len(metrics))
+		baselineLabel, candidateLabel := comparisonLabels(metrics)
+
+		verdicts = append(verdicts, BenchmarkVerdict{
+			Benchmark:      name,
+			Outcome:        outcome,
+			Winner:         winnerLabel(outcome, baselineLabel, candidateLabel),
+			BaselineLabel:  baselineLabel,
+			CandidateLabel: candidateLabel,
+			Metrics:        metrics,
+			Reason:         reason,
+			ReasonCode:     "",
+		})
+	}
+
+	return Report{Verdicts: verdicts}
+}
+
+func comparisonLabels(metrics []Comparison) (string, string) {
+	if len(metrics) == 0 {
+		return fallbackBaselineLabel, fallbackCandidateLabel
+	}
+
+	baselineLabel := metrics[0].BaselineLabel
+	candidateLabel := metrics[0].CandidateLabel
+
+	if baselineLabel == "" {
+		baselineLabel = fallbackBaselineLabel
+	}
+
+	if candidateLabel == "" {
+		candidateLabel = fallbackCandidateLabel
+	}
+
+	return baselineLabel, candidateLabel
+}
+
+func winnerLabel(outcome Outcome, baselineLabel, candidateLabel string) string {
+	switch outcome {
+	case NewWins:
+		return candidateLabel
+	case OldWins:
+		return baselineLabel
+	case Tie, TradeOff, Inconclusive:
+		return ""
+	default:
+		return ""
+	}
+}
+
+func decide(improved, worsened, total int) (Outcome, string) {
+	switch {
+	case total == 0:
+		return Inconclusive, "no comparable metrics"
+	case improved > 0 && worsened == 0:
+		return NewWins, "new is Pareto-superior: better in one or more metrics and not worse in any metric"
+	case worsened > 0 && improved == 0:
+		return OldWins, "old is Pareto-superior: new is worse in one or more metrics and not better in any metric"
+	case improved == 0 && worsened == 0:
+		return Tie, "no statistically significant practical difference"
+	default:
+		return TradeOff, "significant improvements and regressions coexist"
+	}
+}
+
+// WriteText writes the report in a compact text format.
+func (r Report) WriteText(w io.Writer) error {
+	for _, verdict := range r.Verdicts {
+		if err := writeTextVerdict(w, verdict); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeTextVerdict(writer io.Writer, verdict BenchmarkVerdict) error {
+	_, err := fmt.Fprintf(writer, "%s: %s\n", verdict.Benchmark, textOutcome(verdict))
+	if err != nil {
+		return fmt.Errorf("%w: %w", errWritingTextOutput, err)
+	}
+
+	return nil
+}
+
+func textOutcome(verdict BenchmarkVerdict) string {
+	if verdict.Winner != "" {
+		return verdict.Winner + " wins"
+	}
+
+	return string(verdict.Outcome)
+}
+
+// WriteVerboseText writes the report in a detailed text format.
+func (r Report) WriteVerboseText(w io.Writer) error {
+	for _, verdict := range r.Verdicts {
+		if err := writeVerboseTextVerdict(w, verdict); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeVerboseTextVerdict(writer io.Writer, verdict BenchmarkVerdict) error {
+	if err := writeTextVerdict(writer, verdict); err != nil {
+		return err
+	}
+
+	_, err := fmt.Fprintf(writer, "  %s\n", verdict.Reason)
+	if err != nil {
+		return fmt.Errorf("%w: %w", errWritingTextOutput, err)
+	}
+
+	if verdict.ReasonCode != "" {
+		_, err = fmt.Fprintf(writer, "  reason_code=%s\n", verdict.ReasonCode)
+		if err != nil {
+			return fmt.Errorf("%w: %w", errWritingTextOutput, err)
+		}
+	}
+
+	for _, metric := range verdict.Metrics {
+		if err := writeTextMetric(writer, metric); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeTextMetric(writer io.Writer, metric Comparison) error {
+	_, err := fmt.Fprintf(
+		writer,
+		"  %s %-9s %8.2f%% p=%.3g %s\n",
+		directionMark(metric.Direction),
+		metric.Metric,
+		metric.DeltaPct,
+		metric.PValue,
+		metric.Direction,
+	)
+	if err != nil {
+		return fmt.Errorf("%w: %w", errWritingTextOutput, err)
+	}
+
+	return nil
+}
+
+func directionMark(direction Direction) string {
+	switch direction {
+	case Improved:
+		return "+"
+	case Worsened:
+		return "-"
+	case Same:
+		return "="
+	default:
+		return "="
+	}
+}
+
+// WriteJSON writes the report as indented JSON.
+func (r Report) WriteJSON(w io.Writer) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+
+	if err := enc.Encode(r); err != nil {
+		return fmt.Errorf("%w: %w", errWritingJSONOutput, err)
+	}
+
+	return nil
+}
