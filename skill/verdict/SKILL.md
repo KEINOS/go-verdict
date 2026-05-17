@@ -25,7 +25,7 @@ Use `verdict` to turn Go benchmark results into a concise A/B decision.
 For local alternatives in raw benchmark output:
 
 ```sh
-go test -run='^$' -bench=BenchmarkEnhance -benchmem -count=10 ./... | verdict
+go test -run='^$' -bench=BenchmarkMyHeavyFunc -benchmem -count=10 ./your/package | verdict
 ```
 
 For differently named benchmark functions in raw files:
@@ -42,11 +42,18 @@ benchstat old.txt new.txt | verdict
 
 ## Recommended Procedure
 
-1. Prefer `-count=10` or more for stable raw benchmark decisions.
-2. Use default text output for short human-facing summaries.
-3. Use `--verbose` when you need the reason and metric details.
-4. Use `--format json` when another tool will consume the result.
-5. Use `-a` and `-b` when benchmark function names differ.
+1. Use at least 3 samples per side for raw benchmark comparisons.
+2. Prefer `-count=10` or more for stable raw benchmark decisions.
+3. Use default text output for short human-facing summaries.
+4. Use `--verbose` when you need the reason and metric details.
+5. Use `--format json` when another tool will consume the result.
+6. Use `-a` and `-b` when benchmark function names differ.
+
+## Raw Alternatives
+
+- Auto mode compares `original` and `enhanced` when both labels exist under the same parent benchmark.
+- If that default pair is absent, auto mode infers a pair only when the parent has exactly two labels.
+- Use `--mode alternatives --baseline <name> --candidate <name>` for non-default labels or ambiguous inputs.
 
 ## Interpret Results
 
@@ -61,6 +68,6 @@ more metrics and not worse in any metric.
 
 ## Failure Handling
 
-- If samples are insufficient, collect more benchmark runs.
-- If benchmark sets differ in `benchstat`, use `verdict -a` and `-b` with raw files.
+- If samples are insufficient, treat it as a CLI error and collect more benchmark runs.
+- If benchmark sets differ in `benchstat`, treat it as a CLI error and use `verdict -a` and `-b` with raw files.
 - Treat parse and scanner errors as hard input errors, not as benchmark verdicts.
