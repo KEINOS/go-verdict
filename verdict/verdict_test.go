@@ -709,6 +709,30 @@ BenchmarkEnhance/candidate-10 100 8 ns/op
 		"expected winner to be inferred as 'candidate'")
 }
 
+func TestParseNewOptionsPreservesAutoModeRawAlternativeInference(t *testing.T) {
+	t.Parallel()
+
+	input := `BenchmarkEnhance/base-10 100 10 ns/op
+BenchmarkEnhance/candidate-10 100 8 ns/op
+BenchmarkEnhance/base-10 100 10 ns/op
+BenchmarkEnhance/candidate-10 100 8 ns/op
+BenchmarkEnhance/base-10 100 10 ns/op
+BenchmarkEnhance/candidate-10 100 8 ns/op
+`
+
+	report, err := Parse(strings.NewReader(input), NewOptions())
+	require.NoError(t, err)
+
+	got := report.Verdicts[0]
+
+	require.Equal(t, "base", got.BaselineLabel,
+		"unexpected baseline label")
+	require.Equal(t, labelCandidate, got.CandidateLabel,
+		"unexpected candidate label")
+	require.Equal(t, labelCandidate, got.Winner,
+		"unexpected winner")
+}
+
 func TestParseAutoModeRawAlternativesRejectsAmbiguousLabels(t *testing.T) {
 	t.Parallel()
 
@@ -811,9 +835,10 @@ func TestCompareRawFilesInconclusiveCases(t *testing.T) {
 			require.NoError(t, err)
 
 			got := report.Verdicts[0]
-			if got.Outcome != Inconclusive || got.ReasonCode != test.reason {
-				require.Failf(t, "assertion failed", "verdict = %+v, want %s", got, test.reason)
-			}
+			require.Equal(t, Inconclusive, got.Outcome,
+				"unexpected outcome")
+			require.Equal(t, test.reason, got.ReasonCode,
+				"unexpected reason code")
 		})
 	}
 }
@@ -900,7 +925,8 @@ func TestCompareRawFilesRejectsInvalidOptions(t *testing.T) {
 	)
 
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "alpha")
+	require.ErrorContains(t, err, "alpha",
+		"error should mention invalid alpha")
 }
 
 func TestParseTextBenchmarkSetMismatchReturnsLabels(t *testing.T) {
@@ -1261,9 +1287,10 @@ BenchmarkEnhance/enhanced-10 100 8.5 ns/op
 	require.NoError(t, err)
 
 	got := report.Verdicts[0].Metrics[0].PValue
-	if got <= 0 || got >= 1 {
-		t.Fatalf("p-value = %f, want normal approximation between 0 and 1", got)
-	}
+	require.Greater(t, got, 0.0,
+		"unexpected p-value")
+	require.Less(t, got, 1.0,
+		"unexpected p-value")
 }
 
 func TestPrivateAlternativeBranches(t *testing.T) {

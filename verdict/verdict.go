@@ -157,14 +157,17 @@ func parseBenchstat(text string, opts Options) (Report, error) {
 	return parseText(text, opts)
 }
 
-// NewOptions returns an Options with all default values set.
+// NewOptions returns default options for callers that prefer explicit setup.
+// The zero value Options{} is also valid and uses the same defaults.
+// Baseline and Candidate stay empty so auto mode can infer raw benchmark
+// labels; alternatives mode fills original/enhanced defaults when unset.
 func NewOptions() Options {
 	return Options{
 		Alpha:       defaultAlpha,
 		MinDeltaPct: 0,
 		Mode:        modeAuto,
-		Baseline:    defaultBaseline,
-		Candidate:   defaultCandidate,
+		Baseline:    "",
+		Candidate:   "",
 	}
 }
 
