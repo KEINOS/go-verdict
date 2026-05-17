@@ -19,8 +19,8 @@ whether a temporary candidate implementation is worth keeping.
 - Judge local alternatives implemented as sub-benchmarks.
 - Summarize `benchstat` output for a human or automation.
 - Compare two raw Go benchmark files as A/B alternatives.
-- Save context by using `verdict` output instead of pasting raw benchmark logs
-  into your final answer.
+- Save context by using `verdict` output instead of pasting full raw benchmark
+  logs into your final answer.
 
 ## Do Not Use
 
@@ -28,7 +28,8 @@ whether a temporary candidate implementation is worth keeping.
 - Do not declare a winner when the input has too few samples.
 - Do not reimplement the statistical decision model when the `verdict` CLI can read the data.
 - Do not include full raw benchmark output in user-facing replies unless the
-  user asks for details.
+  user asks for details; keep the command, short verdict, relevant metric
+  summary, and any follow-up.
 
 ## Agent Optimization Loop
 
@@ -45,6 +46,10 @@ When optimizing Go code:
    trade-offs.
 6. Report the short verdict, the benchmark command, and any follow-up needed.
    Use `--verbose` only when the reason or metric details matter.
+
+Auto mode only treats `original` and `enhanced` as the default raw alternative
+pair. Use `--mode alternatives --baseline <name> --candidate <name>` for labels
+such as `baseline` and `candidate`.
 
 ## Choose a Workflow
 
