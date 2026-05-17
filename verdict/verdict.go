@@ -1,4 +1,5 @@
-// Package verdict parses benchstat comparison output and turns it into simple benchmark verdicts.
+// Package verdict parses benchstat and raw Go benchmark output into simple
+// benchmark verdicts.
 package verdict
 
 import (
@@ -107,7 +108,8 @@ var (
 	errNoComparisonRows = errors.New("no benchstat comparison rows found")
 )
 
-// Parse reads benchstat output and returns a benchmark verdict report.
+// Parse reads benchstat output or raw Go benchmark output and returns a
+// benchmark verdict report.
 func Parse(reader io.Reader, opts Options) (Report, error) {
 	opts = normalizeOptions(opts)
 

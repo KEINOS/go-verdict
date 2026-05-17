@@ -4,15 +4,15 @@
 
 ```sh
 # Compare benchmark results before and after a change:
-# (`BenchmarkExampleFast()` + 10 iterations in this case)
+# (`BenchmarkMyHeavyFunc()` + 10 iterations in this case)
 benchstat old.txt new.txt | verdict
-ExampleFast-10: tie
+MyHeavyFunc-10: tie
 ```
 
 ```sh
 # Compare two alternatives in raw benchmark output:
-% go test -run='^$' -bench=BenchmarkEnhance -benchmem -count=8 ./testdata | verdict
-BenchmarkEnhance: enhanced wins
+% go test -run='^$' -bench=BenchmarkMyHeavyFunc -benchmem -count=8 ./your/package | verdict
+BenchmarkMyHeavyFunc: enhanced wins
 ```
 
 It is useful when you want a clear answer after changing code:
@@ -65,7 +65,7 @@ Use this workflow for a quick local test before a PR. Use it when the original a
 Example benchmark:
 
 ```go
-func BenchmarkEnhance(b *testing.B) {
+func BenchmarkMyHeavyFunc(b *testing.B) {
  b.Run("original", func(b *testing.B) {
   for b.Loop() {
    ExampleOriginal()
@@ -83,7 +83,7 @@ func BenchmarkEnhance(b *testing.B) {
 Collect repeated benchmark samples:
 
 ```sh
-go test -run='^$' -bench='BenchmarkEnhance' -benchmem -count=20 > alternatives.txt
+go test -run='^$' -bench='BenchmarkMyHeavyFunc' -benchmem -count=20 ./your/package > alternatives.txt
 ```
 
 Then compare the two sub-benchmarks:
@@ -92,7 +92,11 @@ Then compare the two sub-benchmarks:
 verdict < alternatives.txt
 ```
 
-Auto mode groups exactly two sub-benchmarks by their parent benchmark. For example, `BenchmarkEnhance/original-10` and `BenchmarkEnhance/enhanced-10` are compared as one pair under `BenchmarkEnhance`.
+Auto mode first checks whether both `original` and `enhanced` exist under the
+same parent benchmark. If both exist, it compares that pair.
+
+Otherwise, auto mode compares one pair only when the parent benchmark has
+exactly two sub-benchmark labels.
 
 Use explicit labels when the raw benchmark output has more than two alternatives or non-default names:
 
@@ -110,7 +114,7 @@ The outcome meaning is from the new option side:
 | `trade-off` | Some metrics improved, but other metrics regressed. |
 | `inconclusive` | The input does not contain enough comparable samples. |
 
-Raw benchmark comparison supports `ns/op`, `B/op`, and `allocs/op` from `go test` output. It computes deltas and approximate p-values from repeated samples, then applies the same `--alpha`, `--min-delta`, and verdict rules as before/after comparison. It needs at least 3 samples per benchmark side; if there are fewer samples, it returns `inconclusive`.
+Raw benchmark comparison supports `ns/op`, `B/op`, and `allocs/op` from `go test` output. It computes deltas and approximate p-values from repeated samples, then applies the same `--alpha`, `--min-delta`, and verdict rules as before/after comparison. It needs at least 3 samples per benchmark side; with fewer samples, the library report is `inconclusive` and the CLI prints an actionable error.
 
 Run with enough samples. `-count=8` is accepted for quick local checks, but `-count=10` or more is recommended for stable results. If you use only `-count=2`, `verdict` asks you to run more samples:
 
@@ -130,9 +134,9 @@ For example, this is not a valid before/after `benchstat` comparison:
 benchstat fast.txt slow.txt | verdict
 ```
 
-If `fast.txt` contains `BenchmarkExampleFast` and `slow.txt` contains `BenchmarkExampleSlow`, the benchmark names are different. `benchstat` compares the same benchmark name before and after a change, so `verdict` prints a helpful error.
+If `fast.txt` contains `BenchmarkMyHeavyFuncFast` and `slow.txt` contains `BenchmarkMyHeavyFuncSlow`, the benchmark names are different. `benchstat` compares the same benchmark name before and after a change, so `verdict` errors.
 
-Use `-a` and `-b` to say: "compare these two raw benchmark files as A/B alternatives."
+In that case, use `-a` and `-b` to say: "compare these two raw benchmark files as A/B alternatives."
 
 ```sh
 verdict -a fast.txt -b slow.txt
@@ -141,14 +145,14 @@ verdict -a fast.txt -b slow.txt
 Example output:
 
 ```text
-BenchmarkExampleFast_vs_BenchmarkExampleSlow: BenchmarkExampleFast wins
+BenchmarkMyHeavyFuncFast_vs_BenchmarkMyHeavyFuncSlow: BenchmarkMyHeavyFuncFast wins
 ```
 
 Each file should contain one benchmark series, collected with repeated samples:
 
 ```sh
-go test -run='^$' -bench=BenchmarkExampleFast -count=10 ./testdata > fast.txt
-go test -run='^$' -bench=BenchmarkExampleSlow -count=10 ./testdata > slow.txt
+go test -run='^$' -bench=BenchmarkMyHeavyFuncFast -count=10 ./your/package > fast.txt
+go test -run='^$' -bench=BenchmarkMyHeavyFuncSlow -count=10 ./your/package > slow.txt
 verdict -a fast.txt -b slow.txt
 ```
 
@@ -341,7 +345,9 @@ Each metric is classified as:
 
 ## Inconclusive Results
 
-Some inputs cannot produce a reliable verdict. In that case, the output is `inconclusive`.
+Some inputs cannot produce a reliable verdict. Library reports use
+`inconclusive` for these cases. The CLI also turns selected cases, such as
+benchmark-set mismatch and insufficient raw samples, into actionable errors.
 
 Known reason codes include:
 
@@ -349,11 +355,12 @@ Known reason codes include:
 | --- | --- |
 | `missing-pvalue` | The comparison does not include a p-value. |
 | `benchmark-set-mismatch` | The old and new benchmark sets are different. |
-| `missing-baseline` | Alternative mode did not find the baseline sub-benchmark. |
-| `missing-candidate` | Alternative mode did not find the candidate sub-benchmark. |
-| `insufficient-samples` | Alternative mode found too few repeated samples. |
-| `unsupported-metric` | Alternative mode did not find supported metrics to compare. |
-| `malformed-benchmark` | Alternative mode could not parse the raw benchmark rows. |
+| `missing-baseline` | Raw alternatives input did not find the baseline sub-benchmark. |
+| `missing-candidate` | Raw alternatives input did not find the candidate sub-benchmark. |
+| `insufficient-samples` | Raw comparison found too few repeated samples. |
+| `unsupported-metric` | Raw comparison did not find supported metrics to compare. |
+| `malformed-benchmark` | Raw comparison could not parse the benchmark rows. |
+| `ambiguous-alternatives` | Raw alternatives input could not select one baseline/candidate pair from labels. |
 | `ambiguous-benchmark` | A raw file contains more than one benchmark series. |
 
 ## Library Usage
@@ -384,7 +391,7 @@ func main() {
 }
 ```
 
-`verdict.Options{}` uses the default alpha of `0.05`. If you set `Alpha`, use a finite value greater than `0` and at most `1`; `MinDeltaPct` must be finite and non-negative.
+`verdict.Options{}` uses the default alpha of `0.05`. `verdict.NewOptions()` returns the same safe defaults for callers that prefer explicit setup. If you set `Alpha`, use a finite value greater than `0` and at most `1`; `MinDeltaPct` must be finite and non-negative.
 
 ## AI Agent Skill
 
