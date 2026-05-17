@@ -45,7 +45,7 @@ func (failingReader) Read(_ []byte) (int, error) {
 	return 0, errTestWrite
 }
 
-//nolint:paralleltest // disable due to mocking during test
+//nolint:paralleltest // Uses process-wide mocks (os.Args and osExit).
 func Test_main_fail(t *testing.T) {
 	// Backup and restore
 	oldOsExit := osExit
@@ -168,21 +168,23 @@ func TestRunCLISkillNilOutputContainsContext(t *testing.T) {
 
 	err := runCLI([]string{commandSkill}, strings.NewReader("ignored"), nil)
 	require.ErrorIs(t, err, errWritingOutput,
-		"nil output should return writing output context")
+		"nil output should return 'errWritingOutput' error")
 }
 
 func TestRunCLISkillRejectsExtraArgs(t *testing.T) {
 	t.Parallel()
 
 	err := runCLI([]string{commandSkill, "extra"}, strings.NewReader("ignored"), &strings.Builder{})
-	require.ErrorIs(t, err, errUnexpectedCommandArgs)
+	require.ErrorIs(t, err, errUnexpectedCommandArgs,
+		"extra args should return 'errUnexpectedCommandArgs' error")
 }
 
 func TestRunCLIUnknownCommand(t *testing.T) {
 	t.Parallel()
 
 	err := runCLI([]string{"export-skill"}, strings.NewReader("ignored"), &strings.Builder{})
-	require.ErrorIs(t, err, errUnknownCommand)
+	require.ErrorIs(t, err, errUnknownCommand,
+		"unknown command should return 'errUnknownCommand' error")
 }
 
 func TestRunCLIParseErrorContainsContext(t *testing.T) {
@@ -193,7 +195,7 @@ func TestRunCLIParseErrorContainsContext(t *testing.T) {
 	err := runCLI([]string{flagFormat, formatText}, strings.NewReader("invalid"), &out)
 	require.Error(t, err,
 		"invalid input should return parse error")
-	require.Contains(t, err.Error(), "parsing input",
+	require.ErrorContains(t, err, "parsing input",
 		"parse errors should include parsing input context")
 }
 
@@ -215,7 +217,8 @@ func TestRunCLIRejectsInvalidStatisticalOptions(t *testing.T) {
 
 			err := runCLI(test.args, strings.NewReader(winningInput), &strings.Builder{})
 			require.Error(t, err)
-			require.Contains(t, err.Error(), test.want)
+			require.ErrorContains(t, err, test.want,
+				"invalid statistical option should be mentioned in error")
 		})
 	}
 }
@@ -239,9 +242,8 @@ geomean               1.0n      10.0n ? ¹ ²
 	require.Error(t, err,
 		"benchmark mismatch should return guidance error")
 
-	got := err.Error()
 	for _, want := range []string{"benchmark names differ", "verdict -a ./fast.txt -b ./slow.txt"} {
-		require.Contains(t, got, want,
+		require.ErrorContains(t, err, want,
 			"mismatch guidance should include expected hint")
 	}
 }
@@ -273,7 +275,7 @@ func TestRunCLIABFilesRequireBothSides(t *testing.T) {
 	err := runCLI([]string{"-a", "fast.txt"}, strings.NewReader(""), &strings.Builder{})
 	require.Error(t, err,
 		"missing -b should return usage error")
-	require.Contains(t, err.Error(), "use both -a and -b",
+	require.ErrorContains(t, err, "use both -a and -b",
 		"missing side error should mention both flags")
 }
 
@@ -283,7 +285,7 @@ func TestRunCLIABFilesReadError(t *testing.T) {
 	err := runCLI([]string{"-a", "missing-a.txt", "-b", "missing-b.txt"}, strings.NewReader(""), &strings.Builder{})
 	require.Error(t, err,
 		"missing -a file should return read error")
-	require.Contains(t, err.Error(), "reading -a benchmark file",
+	require.ErrorContains(t, err, "reading -a benchmark file",
 		"error should mention -a read failure")
 }
 
@@ -297,7 +299,7 @@ func TestRunCLIABFilesBReadError(t *testing.T) {
 	err := runCLI([]string{"-a", fastPath, "-b", "missing-b.txt"}, strings.NewReader(""), &strings.Builder{})
 	require.Error(t, err,
 		"missing -b file should return read error")
-	require.Contains(t, err.Error(), "reading -b benchmark file",
+	require.ErrorContains(t, err, "reading -b benchmark file",
 		"error should mention -b read failure")
 }
 
@@ -316,7 +318,7 @@ func TestRunCLIABFilesParseError(t *testing.T) {
 		"invalid raw benchmark file should return parse error")
 
 	for _, want := range []string{"parsing input", "scanning raw benchmark file input"} {
-		require.Contains(t, err.Error(), want,
+		require.ErrorContains(t, err, want,
 			"parse error should include expected context")
 	}
 }
@@ -331,7 +333,7 @@ func TestRunCLIAlternativesScannerErrorIsParseError(t *testing.T) {
 		"scanner failure should return parse error")
 
 	for _, want := range []string{"parsing input", "scanning raw alternatives input"} {
-		require.Contains(t, err.Error(), want,
+		require.ErrorContains(t, err, want,
 			"scanner error should include expected context")
 	}
 }
@@ -342,7 +344,7 @@ func TestRunCLIReadErrorContainsContext(t *testing.T) {
 	err := runCLI(nil, failingReader{}, &strings.Builder{})
 	require.Error(t, err,
 		"failing reader should return parse error")
-	require.Contains(t, err.Error(), "parsing input",
+	require.ErrorContains(t, err, "parsing input",
 		"read error should include parsing context")
 }
 
@@ -364,7 +366,7 @@ BenchmarkEnhance/enhanced-10 100 8 ns/op
 		fmt.Sprintf("at least %d samples", verdict.RawComparisonMinSamples),
 		fmt.Sprintf("-count=%d or more", verdict.RecommendedRawSamples),
 	} {
-		require.Contains(t, err.Error(), want,
+		require.ErrorContains(t, err, want,
 			"insufficient sample message should include policy wording")
 	}
 }
@@ -395,8 +397,9 @@ func TestReportErrorBranches(t *testing.T) {
 	require.ErrorIs(t, err, errInsufficientSamples,
 		"insufficient-samples reason should map to CLI error")
 
+	//nolint:exhaustruct // Zero-value BenchmarkVerdict checks fallback labels.
 	err = benchmarkSetMismatchError(verdict.BenchmarkVerdict{})
-	require.Contains(t, err.Error(), "verdict -a ./a.txt -b ./b.txt",
+	require.ErrorContains(t, err, "verdict -a ./a.txt -b ./b.txt",
 		"fallback labels should be used in mismatch guidance")
 }
 
@@ -405,7 +408,7 @@ func TestSampleCountWordingUsesSharedPolicy(t *testing.T) {
 
 	err := insufficientSamplesError()
 	for _, want := range sampleCountWording() {
-		require.Contains(t, err.Error(), want,
+		require.ErrorContains(t, err, want,
 			"insufficient sample error should use shared wording")
 	}
 
@@ -510,21 +513,28 @@ func TestRunCLIUnknownMode(t *testing.T) {
 		"unknown mode should return errUnknownMode")
 }
 
+// ----------------------------------------------------------------------------
+//  Helper functions and test data
+// ----------------------------------------------------------------------------
+
 func mustWriteFile(t *testing.T, path, data string) {
 	t.Helper()
 
-	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+	err := os.WriteFile(path, []byte(data), 0o600)
+	if err != nil {
 		require.NoError(t, err,
 			"failed to write fixture file")
 	}
 }
 
 func verdictReport(reasonCode string) verdict.Report {
+	var zeroBenchmarkVerdict verdict.BenchmarkVerdict
+
+	zeroBenchmarkVerdict.Benchmark = "all"
+	zeroBenchmarkVerdict.Outcome = verdict.Inconclusive
+	zeroBenchmarkVerdict.ReasonCode = reasonCode
+
 	return verdict.Report{
-		Verdicts: []verdict.BenchmarkVerdict{{
-			Benchmark:  "all",
-			Outcome:    verdict.Inconclusive,
-			ReasonCode: reasonCode,
-		}},
+		Verdicts: []verdict.BenchmarkVerdict{zeroBenchmarkVerdict},
 	}
 }

@@ -61,12 +61,15 @@ func parseCSV(input string, opts Options) (Report, error) {
 }
 
 func newCSVParseState() csvParseState {
-	return csvParseState{
-		deltaIndex:  -1,
-		pValueIndex: -1,
-		baseIndex:   -1,
-		newIndex:    -1,
-	}
+	var zeroState csvParseState
+
+	zeroState.deltaIndex = -1
+	zeroState.pValueIndex = -1
+	zeroState.baseIndex = -1
+	zeroState.newIndex = -1
+	zeroState.rows = make([]Comparison, 0)
+
+	return zeroState
 }
 
 func (state *csvParseState) handleRecord(record []string, opts Options) {
@@ -144,24 +147,26 @@ func (state *csvParseState) updateBenchmarkSetMismatch(fields []string) {
 }
 
 func (state *csvParseState) parseComparison(fields []string, opts Options) (Comparison, bool) {
+	var zeroComparison Comparison
+
 	if state.isMissingPValue(fields) {
 		state.hasRowWithoutP = true
 
-		return Comparison{}, false
+		return zeroComparison, false
 	}
 
 	if !hasField(fields, state.deltaIndex) {
-		return Comparison{}, false
+		return zeroComparison, false
 	}
 
 	delta, ok := parseDeltaPercent(fields[state.deltaIndex])
 	if !ok {
-		return Comparison{}, false
+		return zeroComparison, false
 	}
 
 	pValue, ok := parsePValue(fields[state.pValueIndex])
 	if !ok {
-		return Comparison{}, false
+		return zeroComparison, false
 	}
 
 	significant := pValue <= opts.Alpha && math.Abs(delta) >= opts.MinDeltaPct

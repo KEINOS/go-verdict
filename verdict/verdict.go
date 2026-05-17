@@ -49,6 +49,8 @@ type Options struct {
 }
 
 // Comparison is one parsed metric comparison for one benchmark.
+//
+//nolint:tagliatelle // JSON fields keep benchstat snake_case names.
 type Comparison struct {
 	Benchmark      string    `json:"benchmark"`
 	Metric         string    `json:"metric"`
@@ -61,6 +63,8 @@ type Comparison struct {
 }
 
 // BenchmarkVerdict is the final outcome for one benchmark name.
+//
+//nolint:tagliatelle // JSON fields keep benchstat snake_case names.
 type BenchmarkVerdict struct {
 	Benchmark      string       `json:"benchmark"`
 	Outcome        Outcome      `json:"outcome"`
@@ -106,7 +110,9 @@ var (
 // Parse reads benchstat output and returns a benchmark verdict report.
 func Parse(reader io.Reader, opts Options) (Report, error) {
 	opts = normalizeOptions(opts)
-	if err := validateOptions(opts); err != nil {
+
+	err := validateOptions(opts)
+	if err != nil {
 		return Report{}, err
 	}
 
@@ -134,7 +140,9 @@ func Parse(reader io.Reader, opts Options) (Report, error) {
 // CompareRawFiles compares two raw go test benchmark result files as explicit A/B inputs.
 func CompareRawFiles(aReader io.Reader, bReader io.Reader, opts Options) (Report, error) {
 	opts = normalizeOptions(opts)
-	if err := validateOptions(opts); err != nil {
+
+	err := validateOptions(opts)
+	if err != nil {
 		return Report{}, err
 	}
 
@@ -147,6 +155,17 @@ func parseBenchstat(text string, opts Options) (Report, error) {
 	}
 
 	return parseText(text, opts)
+}
+
+// NewOptions returns an Options with all default values set.
+func NewOptions() Options {
+	return Options{
+		Alpha:       defaultAlpha,
+		MinDeltaPct: 0,
+		Mode:        modeAuto,
+		Baseline:    defaultBaseline,
+		Candidate:   defaultCandidate,
+	}
 }
 
 func normalizeOptions(opts Options) Options {

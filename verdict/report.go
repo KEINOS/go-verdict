@@ -42,6 +42,7 @@ func labeledInconclusiveReport(reason, baselineLabel, candidateLabel string) Rep
 		Verdicts: []BenchmarkVerdict{{
 			Benchmark:      "all",
 			Outcome:        Inconclusive,
+			Winner:         "",
 			BaselineLabel:  baselineLabel,
 			CandidateLabel: candidateLabel,
 			Metrics:        nil,
@@ -189,7 +190,8 @@ func decide(improved, worsened, total int) (Outcome, string) {
 // WriteText writes the report in a compact text format.
 func (r Report) WriteText(w io.Writer) error {
 	for _, verdict := range r.Verdicts {
-		if err := writeTextVerdict(w, verdict); err != nil {
+		err := writeTextVerdict(w, verdict)
+		if err != nil {
 			return err
 		}
 	}
@@ -217,7 +219,8 @@ func textOutcome(verdict BenchmarkVerdict) string {
 // WriteVerboseText writes the report in a detailed text format.
 func (r Report) WriteVerboseText(w io.Writer) error {
 	for _, verdict := range r.Verdicts {
-		if err := writeVerboseTextVerdict(w, verdict); err != nil {
+		err := writeVerboseTextVerdict(w, verdict)
+		if err != nil {
 			return err
 		}
 	}
@@ -226,11 +229,12 @@ func (r Report) WriteVerboseText(w io.Writer) error {
 }
 
 func writeVerboseTextVerdict(writer io.Writer, verdict BenchmarkVerdict) error {
-	if err := writeTextVerdict(writer, verdict); err != nil {
+	err := writeTextVerdict(writer, verdict)
+	if err != nil {
 		return err
 	}
 
-	_, err := fmt.Fprintf(writer, "  %s\n", verdict.Reason)
+	_, err = fmt.Fprintf(writer, "  %s\n", verdict.Reason)
 	if err != nil {
 		return fmt.Errorf("%w: %w", errWritingTextOutput, err)
 	}
@@ -243,7 +247,8 @@ func writeVerboseTextVerdict(writer io.Writer, verdict BenchmarkVerdict) error {
 	}
 
 	for _, metric := range verdict.Metrics {
-		if err := writeTextMetric(writer, metric); err != nil {
+		err = writeTextMetric(writer, metric)
+		if err != nil {
 			return err
 		}
 	}
@@ -286,7 +291,8 @@ func (r Report) WriteJSON(w io.Writer) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 
-	if err := enc.Encode(r); err != nil {
+	err := enc.Encode(r)
+	if err != nil {
 		return fmt.Errorf("%w: %w", errWritingJSONOutput, err)
 	}
 

@@ -36,7 +36,9 @@ const (
 var errScanningTextInput = errors.New("scanning benchstat text input")
 
 func parseText(input string, opts Options) (Report, error) {
-	state := textParseState{}
+	var state textParseState
+
+	state.rows = make([]Comparison, 0)
 
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	for scanner.Scan() {
@@ -197,16 +199,18 @@ func shouldSkip(line string) bool {
 }
 
 func parseComparisonLine(line, metric string, opts Options) (Comparison, bool) {
+	var zeroComparison Comparison
+
 	pMatch := pValueRe.FindStringSubmatch(line)
 	if pMatch == nil || pMatch[1] == "n/a" || metric == "" {
-		return Comparison{}, false
+		return zeroComparison, false
 	}
 
 	pValue, _ := strconv.ParseFloat(pMatch[1], 64)
 
 	dMatch := deltaRe.FindStringSubmatch(line)
 	if dMatch == nil {
-		return Comparison{}, false
+		return zeroComparison, false
 	}
 
 	isApproxEqual := strings.TrimSpace(dMatch[0]) == "~"
@@ -223,11 +227,13 @@ func parseComparisonLine(line, metric string, opts Options) (Comparison, bool) {
 		!isApproxEqual
 
 	return Comparison{
-		Benchmark:   name,
-		Metric:      metric,
-		DeltaPct:    delta,
-		PValue:      pValue,
-		Significant: significant,
-		Direction:   classify(metric, delta, significant),
+		Benchmark:      name,
+		Metric:         metric,
+		DeltaPct:       delta,
+		PValue:         pValue,
+		Significant:    significant,
+		Direction:      classify(metric, delta, significant),
+		BaselineLabel:  "",
+		CandidateLabel: "",
 	}, true
 }

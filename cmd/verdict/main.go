@@ -27,7 +27,7 @@ const (
 
 // Mockable variables for testing.
 //
-//nolint:gochecknoglobals // allow global variables for testing purposes
+//nolint:gochecknoglobals // Package-level hook is required for exit mocking.
 var (
 	osExit = os.Exit
 )
@@ -83,7 +83,8 @@ func runCLI(args []string, input io.Reader, output io.Writer) error {
 		return err
 	}
 
-	if err := reportError(report); err != nil {
+	err = reportError(report)
+	if err != nil {
 		return err
 	}
 
@@ -292,7 +293,8 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 		return nil, cliOptions{}, errUnknownMode
 	}
 
-	if err := validateCLIOptions(opts); err != nil {
+	err = validateCLIOptions(opts)
+	if err != nil {
 		return nil, cliOptions{}, err
 	}
 

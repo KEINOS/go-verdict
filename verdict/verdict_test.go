@@ -1,3 +1,4 @@
+//nolint:exhaustruct // Tests intentionally use partial struct literals.
 package verdict
 
 import (
@@ -68,17 +69,12 @@ Foo-8,1.0e-08,1%,8.0e-09,1%,-20.00%,p=0.001 n=10
 	report, err := Parse(strings.NewReader(input), Options{Alpha: 0.05, MinDeltaPct: 0})
 	require.NoError(t, err)
 
-	if len(report.Verdicts) != 1 {
-		require.Failf(t, "assertion failed", "verdict count = %d, want 1", len(report.Verdicts))
-	}
-
-	if report.Verdicts[0].Outcome != NewWins {
-		require.Failf(t, "assertion failed", "outcome = %s, want %s", report.Verdicts[0].Outcome, NewWins)
-	}
-
-	if report.Verdicts[0].Winner != labelNewTxt {
-		require.Failf(t, "assertion failed", "winner = %q, want %q", report.Verdicts[0].Winner, labelNewTxt)
-	}
+	require.Len(t, report.Verdicts, 1,
+		"unexpected verdict count, expected exactly one verdict when one benchmark is present")
+	require.Equal(t, NewWins, report.Verdicts[0].Outcome,
+		"unexpected outcome for new wins with csv format")
+	require.Equal(t, labelNewTxt, report.Verdicts[0].Winner,
+		"unexpected winner for new wins with csv format")
 }
 
 func TestParseTextFormatCapturesBenchstatLabels(t *testing.T) {
@@ -97,6 +93,7 @@ Foo-8              10.0n ± 1%             8.0n ± 1%  -20.00% (p=0.001 n=10)
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
+
 	require.Equal(t, "bench_old.txt", got.BaselineLabel,
 		"unexpected baseline label")
 	require.Equal(t, "bench_new.txt", got.CandidateLabel,
@@ -111,9 +108,8 @@ func TestParseExplicitBenchstatMode(t *testing.T) {
 	report, err := Parse(strings.NewReader(benchstatNewWinsInput), Options{Mode: modeBenchstat})
 	require.NoError(t, err)
 
-	if report.Verdicts[0].Winner != labelNew {
-		require.Failf(t, "assertion failed", "winner = %q, want new", report.Verdicts[0].Winner)
-	}
+	require.Equal(t, labelNew, report.Verdicts[0].Winner,
+		"unexpected winner in explicit benchstat mode")
 }
 
 func TestParseTextWithoutPValueReturnsInconclusive(t *testing.T) {
@@ -131,17 +127,12 @@ Foo-8          1.00n      1.10n
 	report, err := Parse(strings.NewReader(input), Options{Alpha: 0.05, MinDeltaPct: 0})
 	require.NoError(t, err)
 
-	if len(report.Verdicts) != 1 {
-		require.Failf(t, "assertion failed", "verdict count = %d, want 1", len(report.Verdicts))
-	}
-
-	if report.Verdicts[0].Outcome != Inconclusive {
-		require.Failf(t, "assertion failed", "outcome = %s, want %s", report.Verdicts[0].Outcome, Inconclusive)
-	}
-
-	if report.Verdicts[0].ReasonCode != "missing-pvalue" {
-		require.Failf(t, "assertion failed", "reasonCode = %q, want %q", report.Verdicts[0].ReasonCode, "missing-pvalue")
-	}
+	require.Len(t, report.Verdicts, 1,
+		"unexpected verdict count, expected exactly one verdict when one benchmark is present")
+	require.Equal(t, Inconclusive, report.Verdicts[0].Outcome,
+		"unexpected outcome, expected inconclusive when p-value is missing")
+	require.Equal(t, "missing-pvalue", report.Verdicts[0].ReasonCode,
+		"unexpected reason code, expected 'missing-pvalue' when p-value is missing")
 }
 
 func TestParseRejectsInvalidOptions(t *testing.T) {
@@ -163,7 +154,8 @@ func TestParseRejectsInvalidOptions(t *testing.T) {
 
 			_, err := Parse(strings.NewReader(benchstatNewWinsInput), test.opts)
 			require.Error(t, err)
-			require.Contains(t, err.Error(), test.want)
+			require.ErrorContains(t, err, test.want,
+				"error should contain name of invalid option")
 		})
 	}
 }
@@ -173,7 +165,9 @@ func TestParseZeroValueOptionsUseDefaults(t *testing.T) {
 
 	report, err := Parse(strings.NewReader(benchstatNewWinsInput), Options{})
 	require.NoError(t, err)
-	require.Equal(t, NewWins, report.Verdicts[0].Outcome)
+
+	require.Equal(t, NewWins, report.Verdicts[0].Outcome,
+		"unexpected outcome with zero-value options that should use defaults")
 }
 
 func TestHigherRateMetricTreatsPositiveDeltaAsImproved(t *testing.T) {
@@ -186,9 +180,8 @@ Foo-8         100.0    120.0    +20.00% (p=0.001 n=10+10)
 	report, err := Parse(strings.NewReader(input), Options{Alpha: 0.05, MinDeltaPct: 0})
 	require.NoError(t, err)
 
-	if report.Verdicts[0].Outcome != NewWins {
-		require.Failf(t, "assertion failed", "outcome = %s, want %s", report.Verdicts[0].Outcome, NewWins)
-	}
+	require.Equal(t, NewWins, report.Verdicts[0].Outcome,
+		"unexpected outcome for higher-is-better metric where new is faster than old")
 }
 
 func TestMetricsAreSortedDeterministically(t *testing.T) {
@@ -203,6 +196,7 @@ Foo-8         10.0ns ± 1%   8.0ns ± 1%  -20.00% (p=0.001 n=10+10)
 
 	report, err := Parse(strings.NewReader(input), Options{Alpha: 0.05, MinDeltaPct: 0})
 	require.NoError(t, err)
+
 	require.Len(t, report.Verdicts[0].Metrics, 2,
 		"expected deterministic metric ordering with two metrics")
 	require.Equal(t, "alloc/op", report.Verdicts[0].Metrics[0].Metric,
@@ -225,9 +219,7 @@ Foo-8         2.00 ± 0%     2.00 ± 0%       ~     (p=1.000 n=10+10)
 	require.NoError(t, err)
 
 	got := report.Verdicts[0].Outcome
-	if got != NewWins {
-		require.Failf(t, "assertion failed", "outcome = %s, want %s", got, NewWins)
-	}
+	require.Equal(t, NewWins, got, "unexpected outcome for new wins with old benchstat format")
 }
 
 func TestParseNewBenchstatFormatTradeOff(t *testing.T) {
@@ -249,9 +241,8 @@ Foo-8     16.0 ± 0%   32.0 ± 0% +100.00% (p=0.000 n=10)
 	require.NoError(t, err)
 
 	got := report.Verdicts[0].Outcome
-	if got != TradeOff {
-		require.Failf(t, "assertion failed", "outcome = %s, want %s", got, TradeOff)
-	}
+	require.Equal(t, TradeOff, got,
+		"unexpected outcome. One significant improvement and one significant regression should result in trade-off")
 }
 
 func TestInsignificantDifferenceIsTie(t *testing.T) {
@@ -265,9 +256,7 @@ Foo-8         10.0ns ± 1%   9.9ns ± 1%  -1.00% (p=0.300 n=10+10)
 	require.NoError(t, err)
 
 	got := report.Verdicts[0].Outcome
-	if got != Tie {
-		require.Failf(t, "assertion failed", "outcome = %s, want %s", got, Tie)
-	}
+	require.Equal(t, Tie, got, "expected tie when p-value is above alpha threshold")
 }
 
 func TestHigherIsBetterMetric(t *testing.T) {
@@ -281,9 +270,7 @@ Foo-8         100MB/s    120MB/s   +20.00% (p=0.000 n=10+10)
 	require.NoError(t, err)
 
 	got := report.Verdicts[0].Outcome
-	if got != NewWins {
-		require.Failf(t, "assertion failed", "outcome = %s, want %s", got, NewWins)
-	}
+	require.Equal(t, NewWins, got, "unexpected outcome for higher-is-better metric")
 }
 
 func TestParseReaderErrorContainsContext(t *testing.T) {
@@ -291,10 +278,8 @@ func TestParseReaderErrorContainsContext(t *testing.T) {
 
 	_, err := Parse(failingReader{}, Options{})
 	require.Error(t, err, "expected read error")
-
-	if !strings.Contains(err.Error(), "reading benchstat input") {
-		require.Failf(t, "assertion failed", "error = %q, want reading context", err.Error())
-	}
+	require.ErrorContains(t, err, "reading benchstat input",
+		"error should contain context about reading benchstat input")
 }
 
 func TestParseTextScannerErrorContainsContext(t *testing.T) {
@@ -304,10 +289,8 @@ func TestParseTextScannerErrorContainsContext(t *testing.T) {
 
 	_, err := Parse(strings.NewReader(longLine), Options{})
 	require.Error(t, err, "expected scanner error")
-
-	if !strings.Contains(err.Error(), "scanning benchstat text input") {
-		require.Failf(t, "assertion failed", "error = %q, want scanner context", err.Error())
-	}
+	require.ErrorContains(t, err, "scanning benchstat text input",
+		"error should contain context about scanning benchstat text input")
 }
 
 func TestParseAlternativesScannerErrorContainsContext(t *testing.T) {
@@ -317,10 +300,8 @@ func TestParseAlternativesScannerErrorContainsContext(t *testing.T) {
 
 	_, err := Parse(strings.NewReader(longLine), Options{Mode: altMode})
 	require.Error(t, err, "expected scanner error")
-
-	if !strings.Contains(err.Error(), "scanning raw alternatives input") {
-		require.Failf(t, "assertion failed", "error = %q, want raw alternatives scanner context", err.Error())
-	}
+	require.ErrorContains(t, err, "scanning raw alternatives input",
+		"error should contain context about scanning raw alternatives input")
 }
 
 func TestParseCSVErrorContainsContext(t *testing.T) {
@@ -333,19 +314,16 @@ func TestParseCSVErrorContainsContext(t *testing.T) {
 
 	_, err := Parse(strings.NewReader(input), Options{})
 	require.Error(t, err, "expected csv parse error")
-
-	if !strings.Contains(err.Error(), "reading benchstat csv input") {
-		require.Failf(t, "assertion failed", "error = %q, want csv context", err.Error())
-	}
+	require.ErrorContains(t, err, "reading benchstat csv input",
+		"error should contain context about reading benchstat csv input")
 }
 
 func TestParseEmptyInputReturnsError(t *testing.T) {
 	t.Parallel()
 
 	_, err := Parse(strings.NewReader(""), Options{})
-	if !errors.Is(err, errNoComparisonRows) {
-		require.Failf(t, "assertion failed", "error = %v, want %v", err, errNoComparisonRows)
-	}
+	require.ErrorIs(t, err, errNoComparisonRows,
+		"expected 'errNoComparisonRows' error when input is empty")
 }
 
 func TestParseCSVBenchmarkSetMismatchReturnsInconclusive(t *testing.T) {
@@ -360,9 +338,9 @@ Foo-8,,1%,,1%,?,?
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Outcome != Inconclusive || got.ReasonCode != "benchmark-set-mismatch" {
-		require.Failf(t, "assertion failed", "verdict = %+v, want benchmark-set-mismatch inconclusive", got)
-	}
+
+	require.Equal(t, Inconclusive, got.Outcome, "expected inconclusive outcome")
+	require.Equal(t, "benchmark-set-mismatch", got.ReasonCode, "expected benchmark-set-mismatch reason code")
 }
 
 func TestParseCSVMissingPValueReturnsInconclusive(t *testing.T) {
@@ -377,9 +355,9 @@ Foo-8,1.0,1%,0.9,1%,-10.00%,?
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Outcome != Inconclusive || got.ReasonCode != "missing-pvalue" {
-		require.Failf(t, "assertion failed", "verdict = %+v, want missing-pvalue inconclusive", got)
-	}
+
+	require.Equal(t, Inconclusive, got.Outcome, "expected inconclusive outcome")
+	require.Equal(t, "missing-pvalue", got.ReasonCode, "expected missing-pvalue reason code")
 }
 
 func TestParseCSVWithOnlyHeaderReturnsError(t *testing.T) {
@@ -390,9 +368,8 @@ func TestParseCSVWithOnlyHeaderReturnsError(t *testing.T) {
 `
 
 	_, err := Parse(strings.NewReader(input), Options{})
-	if !errors.Is(err, errNoComparisonRows) {
-		require.Failf(t, "assertion failed", "error = %v, want %v", err, errNoComparisonRows)
-	}
+	require.ErrorIs(t, err, errNoComparisonRows,
+		"expected 'errNoComparisonRows' error when only header rows are present")
 }
 
 func TestParseCSVSkipsMalformedRowsAndParsesValidRows(t *testing.T) {
@@ -408,9 +385,10 @@ Good-8,1.0,1%,0.9,1%,-10.00%,0.001
 	report, err := Parse(strings.NewReader(input), Options{})
 	require.NoError(t, err)
 
-	if len(report.Verdicts) != 1 || report.Verdicts[0].Benchmark != "Good-8" {
-		require.Failf(t, "assertion failed", "verdicts = %+v, want only Good-8", report.Verdicts)
-	}
+	require.Len(t, report.Verdicts, 1,
+		"expected only one valid verdict to be parsed")
+	require.Equal(t, "Good-8", report.Verdicts[0].Benchmark,
+		"expected valid row to be parsed with correct benchmark name")
 }
 
 func TestParseTextRowsWithoutUsablePValueReturnsError(t *testing.T) {
@@ -421,9 +399,8 @@ Foo-8         10.0ns ± 1%   8.0ns ± 1%  -20.00% (p=n/a n=10+10)
 `
 
 	_, err := Parse(strings.NewReader(input), Options{})
-	if !errors.Is(err, errNoComparisonRows) {
-		require.Failf(t, "assertion failed", "error = %v, want %v", err, errNoComparisonRows)
-	}
+	require.ErrorIs(t, err, errNoComparisonRows,
+		"expected 'errNoComparisonRows' error when no comparison rows have usable p-value")
 }
 
 func TestParseTextRowsWithoutDeltaReturnsError(t *testing.T) {
@@ -434,9 +411,8 @@ Foo-8         10.0ns ± 1%   8.0ns ± 1%  changed (p=0.001 n=10+10)
 `
 
 	_, err := Parse(strings.NewReader(input), Options{})
-	if !errors.Is(err, errNoComparisonRows) {
-		require.Failf(t, "assertion failed", "error = %v, want %v", err, errNoComparisonRows)
-	}
+	require.ErrorIs(t, err, errNoComparisonRows,
+		"expected 'errNoComparisonRows' error when no comparison rows have usable delta")
 }
 
 func TestMinDeltaThresholdMakesSignificantSmallChangeTie(t *testing.T) {
@@ -448,10 +424,8 @@ Foo-8         10.0ns ± 1%   9.9ns ± 1%  -1.00% (p=0.001 n=10+10)
 
 	report, err := Parse(strings.NewReader(input), Options{Alpha: 0.05, MinDeltaPct: 2})
 	require.NoError(t, err)
-
-	if report.Verdicts[0].Outcome != Tie {
-		require.Failf(t, "assertion failed", "outcome = %s, want %s", report.Verdicts[0].Outcome, Tie)
-	}
+	require.Equal(t, Tie, report.Verdicts[0].Outcome,
+		"expected tie when change is below min delta threshold even if p-value is significant")
 }
 
 func TestOldWinsWhenOnlyRegressionExists(t *testing.T) {
@@ -463,10 +437,8 @@ Foo-8         10.0ns ± 1%   12.0ns ± 1%  +20.00% (p=0.001 n=10+10)
 
 	report, err := Parse(strings.NewReader(input), Options{Alpha: 0.05})
 	require.NoError(t, err)
-
-	if report.Verdicts[0].Outcome != OldWins {
-		require.Failf(t, "assertion failed", "outcome = %s, want %s", report.Verdicts[0].Outcome, OldWins)
-	}
+	require.Equal(t, OldWins, report.Verdicts[0].Outcome,
+		"expected old wins when only regression exists")
 }
 
 func TestWriteTextIncludesReasonCodeAndAllMetricMarks(t *testing.T) {
@@ -489,15 +461,13 @@ func TestWriteTextIncludesReasonCodeAndAllMetricMarks(t *testing.T) {
 	}
 
 	var output strings.Builder
-	if err := report.WriteVerboseText(&output); err != nil {
-		require.NoError(t, err)
-	}
+
+	err := report.WriteVerboseText(&output)
+	require.NoError(t, err)
 
 	got := output.String()
 	for _, want := range []string{"Foo-8: trade-off", "reason_code=example", "+ sec/op", "- B/op", "= allocs/op"} {
-		if !strings.Contains(got, want) {
-			require.Failf(t, "assertion failed", "output = %q, want %q", got, want)
-		}
+		require.Contains(t, got, want, "output should contain %q", want)
 	}
 }
 
@@ -512,27 +482,23 @@ func TestWriteTextUsesConciseHumanWinner(t *testing.T) {
 	}
 
 	var output strings.Builder
-	if err := report.WriteText(&output); err != nil {
-		require.NoError(t, err)
-	}
 
-	want := "Foo-8: new.txt wins\nBar-8: tie\n"
-	if output.String() != want {
-		require.Failf(t, "assertion failed", "output = %q, want %q", output.String(), want)
-	}
+	err := report.WriteText(&output)
+	require.NoError(t, err)
+
+	expect := "Foo-8: new.txt wins\nBar-8: tie\n"
+	actual := output.String()
+	require.Equal(t, expect, actual, "unexpected text report output")
 }
 
 func TestWriteTextNoVerdictsWritesNothing(t *testing.T) {
 	t.Parallel()
 
 	var output strings.Builder
-	if err := (Report{}).WriteText(&output); err != nil {
-		require.NoError(t, err)
-	}
 
-	if output.String() != "" {
-		require.Failf(t, "assertion failed", "output = %q, want empty", output.String())
-	}
+	err := (Report{}).WriteText(&output)
+	require.NoError(t, err)
+	require.Empty(t, output.String(), "expected no output when there are no verdicts")
 }
 
 func TestWriteTextErrorContainsContext(t *testing.T) {
@@ -544,10 +510,8 @@ func TestWriteTextErrorContainsContext(t *testing.T) {
 
 	err := report.WriteText(failingWriter{})
 	require.Error(t, err, "expected write error")
-
-	if !strings.Contains(err.Error(), "writing text report") {
-		require.Failf(t, "assertion failed", "error = %q, want text output context", err.Error())
-	}
+	require.ErrorContains(t, err, "writing text report",
+		"error should contain context about writing text report")
 }
 
 func TestWriteTextReasonErrorContainsContext(t *testing.T) {
@@ -559,11 +523,10 @@ func TestWriteTextReasonErrorContainsContext(t *testing.T) {
 	}
 
 	err := report.WriteVerboseText(&writer)
-	require.Error(t, err, "expected reason write error")
-
-	if !strings.Contains(err.Error(), "writing text report") {
-		require.Failf(t, "assertion failed", "error = %q, want text output context", err.Error())
-	}
+	require.Error(t, err,
+		"expected reason write error")
+	require.ErrorContains(t, err, "writing text report",
+		"error should contain context about writing text report")
 }
 
 func TestWriteJSONSuccess(t *testing.T) {
@@ -574,91 +537,83 @@ func TestWriteJSONSuccess(t *testing.T) {
 	}
 
 	var output strings.Builder
-	if err := report.WriteJSON(&output); err != nil {
-		require.NoError(t, err)
-	}
 
-	if !strings.Contains(output.String(), `"benchmark": "`+benchmarkFoo+`"`) {
-		require.Failf(t, "assertion failed", "output = %q, want benchmark json", output.String())
-	}
+	err := report.WriteJSON(&output)
+	require.NoError(t, err)
+	require.Contains(t, output.String(), `"benchmark": "`+benchmarkFoo+`"`,
+		"output should contain benchmark name in json")
 }
 
 func TestWriteJSONErrorContainsContext(t *testing.T) {
 	t.Parallel()
 
 	err := (Report{}).WriteJSON(failingWriter{})
-	require.Error(t, err, "expected json write error")
-
-	if !strings.Contains(err.Error(), "writing json report") {
-		require.Failf(t, "assertion failed", "error = %q, want json output context", err.Error())
-	}
+	require.Error(t, err,
+		"expected json write error")
+	require.ErrorContains(t, err, "writing json report",
+		"error should contain context about writing json report")
 }
 
 func TestDirectionMarkDefault(t *testing.T) {
 	t.Parallel()
 
-	if got := directionMark(Direction("unknown")); got != "=" {
-		require.Failf(t, "assertion failed", "mark = %q, want =", got)
-	}
+	got := directionMark(Direction("unknown"))
+	require.Equal(t, "=", got, "unexpected direction mark")
 }
 
 func TestPrivateEdgeBranches(t *testing.T) {
 	t.Parallel()
 
 	state := newCSVParseState()
-	state.handleRecord(nil, Options{})
 
-	if len(state.rows) != 0 {
-		require.Failf(t, "assertion failed", "rows = %d, want 0", len(state.rows))
-	}
+	state.handleRecord(nil, Options{})
+	require.Empty(t, state.rows,
+		"no rows should be added when record is nil")
 
 	state.updateBenchmarkSetMismatch([]string{benchmarkFoo})
-
-	if state.hasBenchmarkSetMismatch {
-		require.FailNow(t, "benchmark set mismatch should remain false when fields are missing")
-	}
+	require.False(t, state.hasBenchmarkSetMismatch,
+		"benchmark set mismatch should remain false when fields are missing")
 
 	state.metric = metricSecPerOp
 	state.pValueIndex = 1
 
 	_, ok := state.parseComparison([]string{benchmarkFoo, "0.001"}, Options{})
-	if ok {
-		require.FailNow(t, "comparison with missing delta index should not parse")
-	}
+	require.False(t, ok,
+		"comparison with missing delta index should not parse")
 
-	if got := findFieldIndex([]string{"foo"}, "bar"); got != -1 {
-		require.Failf(t, "assertion failed", "index = %d, want -1", got)
-	}
+	got := findFieldIndex([]string{"foo"}, "bar")
+	require.Equal(t, -1, got,
+		"expect indext to be -1")
 
 	for _, rawDelta := range []string{"", "~", "?", rawBadValue} {
-		if _, ok := parseDeltaPercent(rawDelta); ok {
-			require.Failf(t, "assertion failed", "delta %q parsed, want false", rawDelta)
-		}
+		_, ok := parseDeltaPercent(rawDelta)
+		require.False(t, ok,
+			"invalid delta %q should not parse", rawDelta)
 	}
 
-	if looksLikeComparisonLine("Foo") {
-		require.FailNow(t, "single-field line should not look like comparison")
-	}
+	isCompLine := looksLikeComparisonLine("Foo")
+	require.False(t, isCompLine,
+		"single-field line should not look like comparison")
 }
 
 func TestDecideNoMetricsIsInconclusive(t *testing.T) {
 	t.Parallel()
 
 	outcome, reason := decide(0, 0, 0)
-	if outcome != Inconclusive || reason == "" {
-		require.Failf(t, "assertion failed", "decide = %s, %q; want inconclusive with reason", outcome, reason)
-	}
+	require.Equal(t, Inconclusive, outcome,
+		"expected inconclusive outcome when no metrics are present")
+	require.NotEmpty(t, reason,
+		"expected reason to be non-empty when no metrics are present")
 }
 
 func TestWriteTextMetricErrorContainsContext(t *testing.T) {
 	t.Parallel()
 
 	err := writeTextMetric(failingWriter{}, Comparison{Direction: Same})
-	require.Error(t, err, "expected metric write error")
-
-	if !strings.Contains(err.Error(), "writing text report") {
-		require.Failf(t, "assertion failed", "error = %q, want text output context", err.Error())
-	}
+	require.Error(t, err,
+		"expected metric write error")
+	require.ErrorContains(t, err, "writing text report",
+		"error should contain context about writing text report")
 }
 
 func TestWriteTextReasonCodeErrorContainsContext(t *testing.T) {
@@ -670,11 +625,10 @@ func TestWriteTextReasonCodeErrorContainsContext(t *testing.T) {
 	}
 
 	err := report.WriteVerboseText(&writer)
-	require.Error(t, err, "expected reason code write error")
-
-	if !strings.Contains(err.Error(), "writing text report") {
-		require.Failf(t, "assertion failed", "error = %q, want text output context", err.Error())
-	}
+	require.Error(t, err,
+		"expected reason code write error")
+	require.ErrorContains(t, err, "writing text report",
+		"error should contain context about writing text report")
 }
 
 func TestWriteTextMetricErrorFromReportContainsContext(t *testing.T) {
@@ -693,11 +647,10 @@ func TestWriteTextMetricErrorFromReportContainsContext(t *testing.T) {
 	}
 
 	err := report.WriteVerboseText(&writer)
-	require.Error(t, err, "expected metric write error")
-
-	if !strings.Contains(err.Error(), "writing text report") {
-		require.Failf(t, "assertion failed", "error = %q, want text output context", err.Error())
-	}
+	require.Error(t, err,
+		"expected metric write error")
+	require.ErrorContains(t, err, "writing text report",
+		"error should contain context about writing text report")
 }
 
 func TestParseAlternativesModeNewWins(t *testing.T) {
@@ -707,17 +660,15 @@ func TestParseAlternativesModeNewWins(t *testing.T) {
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Benchmark != "BenchmarkEnhance" || got.Outcome != NewWins {
-		require.Failf(t, "assertion failed", "verdict = %+v, want BenchmarkEnhance new-wins", got)
-	}
 
-	if len(got.Metrics) != 3 {
-		require.Failf(t, "assertion failed", "metrics = %d, want 3", len(got.Metrics))
-	}
-
-	if got.Winner != "enhanced" {
-		require.Failf(t, "assertion failed", "winner = %q, want enhanced", got.Winner)
-	}
+	require.Equal(t, "BenchmarkEnhance", got.Benchmark,
+		"expected benchmark name to be inferred as common prefix of benchmark names")
+	require.Equal(t, NewWins, got.Outcome,
+		"expected outcome to be new-wins based on significant improvement in sec/op")
+	require.Len(t, got.Metrics, 3,
+		"expected all three metrics to be parsed in alternatives mode")
+	require.Equal(t, "enhanced", got.Winner,
+		"expected winner to be enhanced based on benchmark names")
 }
 
 func TestParseAutoModeRawAlternativesInfersLabels(t *testing.T) {
@@ -727,9 +678,11 @@ func TestParseAutoModeRawAlternativesInfersLabels(t *testing.T) {
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Benchmark != "BenchmarkEnhance" || got.Winner != "enhanced" {
-		require.Failf(t, "assertion failed", "verdict = %+v, want BenchmarkEnhance enhanced winner", got)
-	}
+
+	require.Equal(t, "BenchmarkEnhance", got.Benchmark,
+		"expected benchmark name to be inferred as common prefix of benchmark names")
+	require.Equal(t, "enhanced", got.Winner,
+		"expected winner to be inferred as enhanced based on benchmark names")
 }
 
 func TestParseAutoModeRawAlternativesInfersNonDefaultLabels(t *testing.T) {
@@ -747,9 +700,13 @@ BenchmarkEnhance/candidate-10 100 8 ns/op
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.BaselineLabel != "base" || got.CandidateLabel != labelCandidate || got.Winner != labelCandidate {
-		require.Failf(t, "assertion failed", "verdict = %+v, want base/candidate labels with candidate winner", got)
-	}
+
+	require.Equal(t, "base", got.BaselineLabel,
+		"expected baseline label to be inferred as 'base'")
+	require.Equal(t, labelCandidate, got.CandidateLabel,
+		"expected candidate label to be inferred as 'candidate'")
+	require.Equal(t, labelCandidate, got.Winner,
+		"expected winner to be inferred as 'candidate'")
 }
 
 func TestParseAutoModeRawAlternativesRejectsAmbiguousLabels(t *testing.T) {
@@ -767,9 +724,11 @@ BenchmarkEnhance/c-10 100 8 ns/op
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Outcome != Inconclusive || got.ReasonCode != "ambiguous-alternatives" {
-		require.Failf(t, "assertion failed", "verdict = %+v, want ambiguous-alternatives", got)
-	}
+
+	require.Equal(t, Inconclusive, got.Outcome,
+		"expected outcome to be inconclusive")
+	require.Equal(t, "ambiguous-alternatives", got.ReasonCode,
+		"expected reason code to be 'ambiguous-alternatives'")
 }
 
 func TestCompareRawFilesDifferentBenchmarkNames(t *testing.T) {
@@ -782,65 +741,13 @@ func TestCompareRawFilesDifferentBenchmarkNames(t *testing.T) {
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Benchmark != "BenchmarkExampleFast_vs_BenchmarkExampleSlow" ||
-		got.Winner != "BenchmarkExampleFast" ||
-		got.Outcome != OldWins {
-		require.Failf(t, "assertion failed", "verdict = %+v, want BenchmarkExampleFast winner", got)
-	}
-}
 
-func TestCompareRawFilesInconclusiveCases(t *testing.T) {
-	t.Parallel()
-
-	for _, test := range rawFileInconclusiveCases() {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			report, err := CompareRawFiles(strings.NewReader(test.aInput), strings.NewReader(test.bInput), Options{})
-			require.NoError(t, err)
-
-			got := report.Verdicts[0]
-			if got.Outcome != Inconclusive || got.ReasonCode != test.reason {
-				require.Failf(t, "assertion failed", "verdict = %+v, want %s", got, test.reason)
-			}
-		})
-	}
-}
-
-func TestCompareRawFilesSampleBoundaries(t *testing.T) {
-	t.Parallel()
-
-	for _, test := range []struct {
-		count       int
-		wantReason  string
-		wantOutcome Outcome
-	}{
-		{count: StatisticalMinSamples, wantReason: reasonInsufficient, wantOutcome: Inconclusive},
-		{count: RawComparisonMinSamples, wantOutcome: OldWins},
-		{count: 8, wantOutcome: OldWins},
-		{count: RecommendedRawSamples - 1, wantOutcome: OldWins},
-		{count: RecommendedRawSamples, wantOutcome: OldWins},
-	} {
-		t.Run(fmt.Sprintf("count_%d", test.count), func(t *testing.T) {
-			t.Parallel()
-
-			report, err := CompareRawFiles(
-				strings.NewReader(rawFileSamples("BenchmarkExampleFast", 1, test.count)),
-				strings.NewReader(rawFileSamples("BenchmarkExampleSlow", 10, test.count)),
-				Options{},
-			)
-			require.NoError(t, err)
-
-			got := report.Verdicts[0]
-			if got.Outcome != test.wantOutcome {
-				require.Failf(t, "assertion failed", "outcome = %s, want %s", got.Outcome, test.wantOutcome)
-			}
-
-			if got.ReasonCode != test.wantReason {
-				require.Failf(t, "assertion failed", "reason = %q, want %q", got.ReasonCode, test.wantReason)
-			}
-		})
-	}
+	require.Equal(t, "BenchmarkExampleFast_vs_BenchmarkExampleSlow", got.Benchmark,
+		"expected benchmark name to be combined from both inputs")
+	require.Equal(t, "BenchmarkExampleFast", got.Winner,
+		"expected winner to be BenchmarkExampleFast based on faster sec/op")
+	require.Equal(t, OldWins, got.Outcome,
+		"expected outcome to be old wins based on faster sec/op")
 }
 
 type rawFileInconclusiveCase struct {
@@ -850,6 +757,7 @@ type rawFileInconclusiveCase struct {
 	reason string
 }
 
+// data provider for inconclusive cases in CompareRawFiles tests.
 func rawFileInconclusiveCases() []rawFileInconclusiveCase {
 	return []rawFileInconclusiveCase{
 		{
@@ -892,6 +800,58 @@ func rawFileInconclusiveCases() []rawFileInconclusiveCase {
 	}
 }
 
+func TestCompareRawFilesInconclusiveCases(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range rawFileInconclusiveCases() {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			report, err := CompareRawFiles(strings.NewReader(test.aInput), strings.NewReader(test.bInput), Options{})
+			require.NoError(t, err)
+
+			got := report.Verdicts[0]
+			if got.Outcome != Inconclusive || got.ReasonCode != test.reason {
+				require.Failf(t, "assertion failed", "verdict = %+v, want %s", got, test.reason)
+			}
+		})
+	}
+}
+
+func TestCompareRawFilesSampleBoundaries(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		count       int
+		wantReason  string
+		wantOutcome Outcome
+	}{
+		{count: StatisticalMinSamples, wantReason: reasonInsufficient, wantOutcome: Inconclusive},
+		{count: RawComparisonMinSamples, wantReason: "", wantOutcome: OldWins},
+		{count: 8, wantReason: "", wantOutcome: OldWins},
+		{count: RecommendedRawSamples - 1, wantReason: "", wantOutcome: OldWins},
+		{count: RecommendedRawSamples, wantReason: "", wantOutcome: OldWins},
+	} {
+		t.Run(fmt.Sprintf("count_%d", test.count), func(t *testing.T) {
+			t.Parallel()
+
+			report, err := CompareRawFiles(
+				strings.NewReader(rawFileSamples("BenchmarkExampleFast", 1, test.count)),
+				strings.NewReader(rawFileSamples("BenchmarkExampleSlow", 10, test.count)),
+				Options{},
+			)
+			require.NoError(t, err)
+
+			got := report.Verdicts[0]
+
+			require.Equal(t, test.wantOutcome, got.Outcome,
+				"expected outcome should match for sample count %d", test.count)
+			require.Equal(t, test.wantReason, got.ReasonCode,
+				"expected reason code should match for sample count %d", test.count)
+		})
+	}
+}
+
 func rawAlternativeSamples(count int) string {
 	var input strings.Builder
 
@@ -916,22 +876,18 @@ func rawFileSamples(name string, nsPerOp int, count int) string {
 func TestCompareRawFilesReadErrors(t *testing.T) {
 	t.Parallel()
 
-	if _, err := CompareRawFiles(failingReader{}, strings.NewReader(""), Options{}); err == nil {
-		require.FailNow(t, "expected a reader error")
-	}
+	_, err := CompareRawFiles(failingReader{}, strings.NewReader(""), Options{})
+	require.Error(t, err, "expected a reader error")
 
-	if _, err := CompareRawFiles(strings.NewReader("PASS\n"), failingReader{}, Options{}); err == nil {
-		require.FailNow(t, "expected b reader error")
-	}
+	_, err = CompareRawFiles(strings.NewReader("PASS\n"), failingReader{}, Options{})
+	require.Error(t, err, "expected b reader error")
 
 	longLine := strings.NewReader(strings.Repeat("x", 70*1024))
 
-	_, err := CompareRawFiles(longLine, strings.NewReader(""), Options{})
+	_, err = CompareRawFiles(longLine, strings.NewReader(""), Options{})
 	require.Error(t, err, "expected scanner error")
-
-	if !strings.Contains(err.Error(), "scanning raw benchmark file input") {
-		require.Failf(t, "assertion failed", "error = %q, want raw file scanner context", err.Error())
-	}
+	require.ErrorContains(t, err, "scanning raw benchmark file input",
+		"expected scanner error context in a read error")
 }
 
 func TestCompareRawFilesRejectsInvalidOptions(t *testing.T) {
@@ -942,6 +898,7 @@ func TestCompareRawFilesRejectsInvalidOptions(t *testing.T) {
 		strings.NewReader(rawFileSamples("BenchmarkExampleSlow", 10, RawComparisonMinSamples)),
 		Options{Alpha: math.Inf(1)},
 	)
+
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "alpha")
 }
@@ -965,11 +922,13 @@ geomean               1.0n      10.0n ? ¹ ²
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.ReasonCode != "benchmark-set-mismatch" ||
-		got.BaselineLabel != "./fast.txt" ||
-		got.CandidateLabel != "./slow.txt" {
-		require.Failf(t, "assertion failed", "verdict = %+v, want benchmark-set-mismatch labels", got)
-	}
+
+	require.Equal(t, "benchmark-set-mismatch", got.ReasonCode,
+		"expected reason code to indicate benchmark set mismatch")
+	require.Equal(t, "./fast.txt", got.BaselineLabel,
+		"unexpected baseline label")
+	require.Equal(t, "./slow.txt", got.CandidateLabel,
+		"unexpected candidate label")
 }
 
 func TestPrivateRawFileBenchmarkLineBranches(t *testing.T) {
@@ -982,9 +941,8 @@ func TestPrivateRawFileBenchmarkLineBranches(t *testing.T) {
 		"BenchmarkExampleFast-10 100 1 ns/op 2",
 		"-10 100 1 ns/op",
 	} {
-		if _, _, ok := parseRawFileBenchmarkLine(line); ok {
-			require.Failf(t, "assertion failed", "line %q parsed, want false", line)
-		}
+		_, _, ok := parseRawFileBenchmarkLine(line)
+		require.False(t, ok, "line '%q' should not parse", line)
 	}
 }
 
@@ -1000,16 +958,20 @@ BenchmarkEnhance/group/candidate-10 100 10 ns/op
 `
 
 	report, err := Parse(strings.NewReader(input), Options{
-		Mode:      altMode,
-		Baseline:  "base",
-		Candidate: labelCandidate,
+		Alpha:       0,
+		MinDeltaPct: 0,
+		Mode:        altMode,
+		Baseline:    "base",
+		Candidate:   labelCandidate,
 	})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Benchmark != "BenchmarkEnhance/group" || got.Outcome != NewWins {
-		require.Failf(t, "assertion failed", "verdict = %+v, want nested new-wins", got)
-	}
+
+	require.Equal(t, "BenchmarkEnhance/group", got.Benchmark,
+		"unexpected benchmark name")
+	require.Equal(t, NewWins, got.Outcome,
+		"unexpected outcome")
 }
 
 func TestParseAlternativesModeTradeOff(t *testing.T) {
@@ -1026,9 +988,7 @@ BenchmarkEnhance/enhanced-10 100 8 ns/op 16 B/op
 	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
 	require.NoError(t, err)
 
-	if report.Verdicts[0].Outcome != TradeOff {
-		require.Failf(t, "assertion failed", "outcome = %s, want %s", report.Verdicts[0].Outcome, TradeOff)
-	}
+	require.Equal(t, TradeOff, report.Verdicts[0].Outcome, "unexpected outcome")
 }
 
 func TestParseAlternativesModeTie(t *testing.T) {
@@ -1045,9 +1005,7 @@ BenchmarkEnhance/enhanced-10 100 10 ns/op
 	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
 	require.NoError(t, err)
 
-	if report.Verdicts[0].Outcome != Tie {
-		require.Failf(t, "assertion failed", "outcome = %s, want %s", report.Verdicts[0].Outcome, Tie)
-	}
+	require.Equal(t, Tie, report.Verdicts[0].Outcome, "unexpected outcome")
 }
 
 func TestParseAlternativesModeOldWins(t *testing.T) {
@@ -1064,9 +1022,7 @@ BenchmarkEnhance/enhanced-10 100 10 ns/op
 	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
 	require.NoError(t, err)
 
-	if report.Verdicts[0].Outcome != OldWins {
-		require.Failf(t, "assertion failed", "outcome = %s, want %s", report.Verdicts[0].Outcome, OldWins)
-	}
+	require.Equal(t, OldWins, report.Verdicts[0].Outcome, "unexpected outcome")
 }
 
 func TestParseAlternativesModeMissingBaseline(t *testing.T) {
@@ -1080,9 +1036,9 @@ BenchmarkEnhance/enhanced-10 100 8 ns/op
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Outcome != Inconclusive || got.ReasonCode != "missing-baseline" {
-		require.Failf(t, "assertion failed", "verdict = %+v, want missing-baseline", got)
-	}
+
+	require.Equal(t, Inconclusive, got.Outcome, "unexpected outcome")
+	require.Equal(t, "missing-baseline", got.ReasonCode, "unexpected reason code")
 }
 
 func TestParseAlternativesModeMissingCandidate(t *testing.T) {
@@ -1096,9 +1052,9 @@ BenchmarkEnhance/original-10 100 8 ns/op
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Outcome != Inconclusive || got.ReasonCode != "missing-candidate" {
-		require.Failf(t, "assertion failed", "verdict = %+v, want missing-candidate", got)
-	}
+
+	require.Equal(t, Inconclusive, got.Outcome, "unexpected outcome")
+	require.Equal(t, "missing-candidate", got.ReasonCode, "unexpected reason code")
 }
 
 func TestParseAlternativesModeInsufficientSamples(t *testing.T) {
@@ -1112,9 +1068,9 @@ BenchmarkEnhance/enhanced-10 100 7 ns/op
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Outcome != Inconclusive || got.ReasonCode != reasonInsufficient {
-		require.Failf(t, "assertion failed", "verdict = %+v, want insufficient-samples", got)
-	}
+
+	require.Equal(t, Inconclusive, got.Outcome, "unexpected outcome")
+	require.Equal(t, reasonInsufficient, got.ReasonCode, "unexpected reason code")
 }
 
 func TestParseAlternativesRawSampleBoundaries(t *testing.T) {
@@ -1126,10 +1082,10 @@ func TestParseAlternativesRawSampleBoundaries(t *testing.T) {
 		wantOutcome Outcome
 	}{
 		{count: StatisticalMinSamples, wantReason: reasonInsufficient, wantOutcome: Inconclusive},
-		{count: RawComparisonMinSamples, wantOutcome: NewWins},
-		{count: 8, wantOutcome: NewWins},
-		{count: RecommendedRawSamples - 1, wantOutcome: NewWins},
-		{count: RecommendedRawSamples, wantOutcome: NewWins},
+		{count: RawComparisonMinSamples, wantReason: "", wantOutcome: NewWins},
+		{count: 8, wantReason: "", wantOutcome: NewWins},
+		{count: RecommendedRawSamples - 1, wantReason: "", wantOutcome: NewWins},
+		{count: RecommendedRawSamples, wantReason: "", wantOutcome: NewWins},
 	} {
 		t.Run(fmt.Sprintf("count_%d", test.count), func(t *testing.T) {
 			t.Parallel()
@@ -1138,13 +1094,9 @@ func TestParseAlternativesRawSampleBoundaries(t *testing.T) {
 			require.NoError(t, err)
 
 			got := report.Verdicts[0]
-			if got.Outcome != test.wantOutcome {
-				require.Failf(t, "assertion failed", "outcome = %s, want %s", got.Outcome, test.wantOutcome)
-			}
 
-			if got.ReasonCode != test.wantReason {
-				require.Failf(t, "assertion failed", "reason = %q, want %q", got.ReasonCode, test.wantReason)
-			}
+			require.Equal(t, test.wantOutcome, got.Outcome, "unexpected outcome")
+			require.Equal(t, test.wantReason, got.ReasonCode, "unexpected reason code")
 		})
 	}
 }
@@ -1160,9 +1112,9 @@ BenchmarkEnhance/enhanced-10 100 9 MB/s
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Outcome != Inconclusive || got.ReasonCode != "unsupported-metric" {
-		require.Failf(t, "assertion failed", "verdict = %+v, want unsupported-metric", got)
-	}
+
+	require.Equal(t, Inconclusive, got.Outcome, "unexpected outcome")
+	require.Equal(t, "unsupported-metric", got.ReasonCode, "unexpected reason code")
 }
 
 func TestParseAlternativesModeNoCommonMetric(t *testing.T) {
@@ -1178,9 +1130,9 @@ BenchmarkEnhance/enhanced-10 100 1 allocs/op
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Outcome != Inconclusive || got.ReasonCode != "unsupported-metric" {
-		require.Failf(t, "assertion failed", "verdict = %+v, want unsupported-metric", got)
-	}
+
+	require.Equal(t, Inconclusive, got.Outcome, "unexpected outcome")
+	require.Equal(t, "unsupported-metric", got.ReasonCode, "unexpected reason code")
 }
 
 func TestParseAlternativesModeMalformedBenchmark(t *testing.T) {
@@ -1190,9 +1142,9 @@ func TestParseAlternativesModeMalformedBenchmark(t *testing.T) {
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Outcome != Inconclusive || got.ReasonCode != reasonMalformedBenchmark {
-		require.Failf(t, "assertion failed", "verdict = %+v, want malformed-benchmark", got)
-	}
+
+	require.Equal(t, Inconclusive, got.Outcome, "unexpected outcome")
+	require.Equal(t, reasonMalformedBenchmark, got.ReasonCode, "unexpected reason code")
 }
 
 func TestParseAlternativesModeMalformedShortRow(t *testing.T) {
@@ -1202,9 +1154,9 @@ func TestParseAlternativesModeMalformedShortRow(t *testing.T) {
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Outcome != Inconclusive || got.ReasonCode != reasonMalformedBenchmark {
-		require.Failf(t, "assertion failed", "verdict = %+v, want malformed-benchmark", got)
-	}
+
+	require.Equal(t, Inconclusive, got.Outcome, "unexpected outcome")
+	require.Equal(t, reasonMalformedBenchmark, got.ReasonCode, "unexpected reason code")
 }
 
 func TestParseAlternativesModeMalformedIteration(t *testing.T) {
@@ -1214,9 +1166,9 @@ func TestParseAlternativesModeMalformedIteration(t *testing.T) {
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Outcome != Inconclusive || got.ReasonCode != reasonMalformedBenchmark {
-		require.Failf(t, "assertion failed", "verdict = %+v, want malformed-benchmark", got)
-	}
+
+	require.Equal(t, Inconclusive, got.Outcome, "unexpected outcome")
+	require.Equal(t, reasonMalformedBenchmark, got.ReasonCode, "unexpected reason code")
 }
 
 func TestParseAlternativesModeMalformedSupportedMetricValue(t *testing.T) {
@@ -1229,9 +1181,9 @@ func TestParseAlternativesModeMalformedSupportedMetricValue(t *testing.T) {
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Outcome != Inconclusive || got.ReasonCode != reasonMalformedBenchmark {
-		require.Failf(t, "assertion failed", "verdict = %+v, want malformed-benchmark", got)
-	}
+
+	require.Equal(t, Inconclusive, got.Outcome, "unexpected outcome")
+	require.Equal(t, reasonMalformedBenchmark, got.ReasonCode, "unexpected reason code")
 }
 
 func TestCompareRawFilesMalformedSupportedMetricValue(t *testing.T) {
@@ -1245,9 +1197,9 @@ func TestCompareRawFilesMalformedSupportedMetricValue(t *testing.T) {
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Outcome != Inconclusive || got.ReasonCode != reasonMalformedBenchmark {
-		require.Failf(t, "assertion failed", "verdict = %+v, want malformed-benchmark", got)
-	}
+
+	require.Equal(t, Inconclusive, got.Outcome, "unexpected outcome")
+	require.Equal(t, reasonMalformedBenchmark, got.ReasonCode, "unexpected reason code")
 }
 
 func TestParseAlternativesModeNoBenchmarkRows(t *testing.T) {
@@ -1257,9 +1209,9 @@ func TestParseAlternativesModeNoBenchmarkRows(t *testing.T) {
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
-	if got.Outcome != Inconclusive || got.ReasonCode != reasonMalformedBenchmark {
-		require.Failf(t, "assertion failed", "verdict = %+v, want malformed-benchmark", got)
-	}
+
+	require.Equal(t, Inconclusive, got.Outcome, "unexpected outcome")
+	require.Equal(t, reasonMalformedBenchmark, got.ReasonCode, "unexpected reason code")
 }
 
 func TestParseAlternativesModeSkipsUnrequestedLabels(t *testing.T) {
@@ -1269,10 +1221,7 @@ func TestParseAlternativesModeSkipsUnrequestedLabels(t *testing.T) {
 
 	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
 	require.NoError(t, err)
-
-	if report.Verdicts[0].Outcome != NewWins {
-		require.Failf(t, "assertion failed", "outcome = %s, want %s", report.Verdicts[0].Outcome, NewWins)
-	}
+	require.Equal(t, NewWins, report.Verdicts[0].Outcome, "unexpected outcome")
 }
 
 func TestParseAlternativesModeSortsMixedVerdicts(t *testing.T) {
@@ -1292,9 +1241,10 @@ BenchmarkA/original-10 100 10 ns/op
 	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
 	require.NoError(t, err)
 
-	if report.Verdicts[0].Benchmark != "BenchmarkA" || report.Verdicts[1].Benchmark != "BenchmarkZ" {
-		require.Failf(t, "assertion failed", "verdicts = %+v, want sorted mixed verdicts", report.Verdicts)
-	}
+	require.Equal(t, "BenchmarkA", report.Verdicts[0].Benchmark,
+		"expected BenchmarkA to be sorted before BenchmarkZ")
+	require.Equal(t, "BenchmarkZ", report.Verdicts[1].Benchmark,
+		"expected BenchmarkZ to be sorted after BenchmarkA")
 }
 
 func TestParseAlternativesModeVariableSamplesUsePValueApproximation(t *testing.T) {
@@ -1307,34 +1257,32 @@ BenchmarkEnhance/enhanced-10 100 9 ns/op
 BenchmarkEnhance/original-10 100 11 ns/op
 BenchmarkEnhance/enhanced-10 100 8.5 ns/op
 `
-
 	report, err := Parse(strings.NewReader(input), Options{Mode: altMode, Alpha: 1})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0].Metrics[0].PValue
 	if got <= 0 || got >= 1 {
-		require.Failf(t, "assertion failed", "p-value = %f, want normal approximation between 0 and 1", got)
+		t.Fatalf("p-value = %f, want normal approximation between 0 and 1", got)
 	}
 }
 
 func TestPrivateAlternativeBranches(t *testing.T) {
 	t.Parallel()
 
-	if got := trimCPUSuffix("BenchmarkFoo/original"); got != "BenchmarkFoo/original" {
-		require.Failf(t, "assertion failed", "name = %q, want no trim", got)
-	}
+	got := trimCPUSuffix("BenchmarkFoo/original")
+	require.Equal(t, "BenchmarkFoo/original", got,
+		"benchmark name without numeric suffix should not be trimmed")
 
-	if got := trimCPUSuffix("BenchmarkFoo/original-fast"); got != "BenchmarkFoo/original-fast" {
-		require.Failf(t, "assertion failed", "name = %q, want no trim for non-numeric suffix", got)
-	}
+	got = trimCPUSuffix("BenchmarkFoo/original-fast")
+	require.Equal(t, "BenchmarkFoo/original-fast", got,
+		"benchmark name with non-numeric suffix should not be trimmed")
 
-	if _, _, ok := splitRawBenchmarkName("BenchmarkFoo-10"); ok {
-		require.FailNow(t, "benchmark without sub-benchmark should not split")
-	}
+	_, _, ok := splitRawBenchmarkName("BenchmarkFoo-10")
+	require.False(t, ok, "benchmark name without sub-benchmark should not split")
 
-	if metric, ok := normalizeRawMetric("MB/s"); ok || metric != "" {
-		require.Failf(t, "assertion failed", "metric = %q, ok = %v; want unsupported", metric, ok)
-	}
+	metric, ok := normalizeRawMetric("MB/s")
+	require.False(t, ok, "unsupported metric should not parse")
+	require.Empty(t, metric, "unsupported metric should return empty")
 }
 
 func TestPrivateAlternativeMathBranches(t *testing.T) {
@@ -1342,36 +1290,32 @@ func TestPrivateAlternativeMathBranches(t *testing.T) {
 
 	metrics, ok := parseRawMetrics([]string{rawBadValue, "MB/s", "10", metricNanosecondsPerOp})
 	require.True(t, ok, "unsupported bad metric value should not make the row malformed")
+	require.InDelta(t, 10.0, metrics[metricSecPerOp], 1e-9, "valid metric should be parsed")
 
-	if metrics[metricSecPerOp] != 10 {
-		require.Failf(t, "assertion failed", "metrics = %+v, want valid metric after bad value", metrics)
-	}
+	_, ok = parseRawMetrics([]string{rawBadValue, metricNanosecondsPerOp})
+	require.False(t, ok, "bad metric value should not parse")
 
-	if _, ok := parseRawMetrics([]string{rawBadValue, metricNanosecondsPerOp}); ok {
-		require.FailNow(t, "supported metric with bad value should be malformed")
-	}
+	got := variance([]float64{1}, 1)
+	require.InDelta(t, 0.0, got, 1e-9, "variance of one sample should be zero")
 
-	if got := variance([]float64{1}, 1); got != 0 {
-		require.Failf(t, "assertion failed", "variance = %f, want 0 for one sample", got)
-	}
-
-	if got := deltaPercent(0, 10); got != 0 {
-		require.Failf(t, "assertion failed", "delta = %f, want 0 for zero baseline", got)
-	}
+	got = deltaPercent(0, 10)
+	require.InDelta(t, 0.0, got, 1e-9, "delta percent with zero baseline should be zero")
 }
 
 func TestPrivateAlternativeEmptyReportBranches(t *testing.T) {
 	t.Parallel()
 
 	insufficientState := alternativeParseState{hasInsufficientRows: true}
-	if got := insufficientState.emptyAlternativeReport(); got.Verdicts[0].ReasonCode != reasonInsufficient {
-		require.Failf(t, "assertion failed", "report = %+v, want insufficient-samples", got)
-	}
+
+	got := insufficientState.emptyAlternativeReport()
+	require.Equal(t, reasonInsufficient, got.Verdicts[0].ReasonCode,
+		"report reason code should indicate insufficient samples when state has insufficient rows")
 
 	emptyState := alternativeParseState{}
-	if got := emptyState.emptyAlternativeReport(); got.Verdicts[0].ReasonCode != reasonMalformedBenchmark {
-		require.Failf(t, "assertion failed", "report = %+v, want malformed-benchmark", got)
-	}
+
+	got = emptyState.emptyAlternativeReport()
+	require.Equal(t, reasonMalformedBenchmark, got.Verdicts[0].ReasonCode,
+		"report reason code should indicate malformed benchmark when state is empty")
 }
 
 func TestPrivateTextLabelBranches(t *testing.T) {
@@ -1395,13 +1339,13 @@ func TestPrivateTextLabelBranches(t *testing.T) {
 	require.False(t, ok,
 		"metric header should not parse as labels")
 
-	if got := emptyTextState.rawBaselineLabel(); got != labelOld {
-		require.Failf(t, "assertion failed", "raw baseline label = %q, want old", got)
-	}
+	got := emptyTextState.rawBaselineLabel()
+	require.Equal(t, labelOld, got,
+		"raw baseline fallback should be old when baseline label is empty")
 
-	if got := emptyTextState.rawCandidateLabel(); got != labelNew {
-		require.Failf(t, "assertion failed", "raw candidate label = %q, want new", got)
-	}
+	got = emptyTextState.rawCandidateLabel()
+	require.Equal(t, labelNew, got,
+		"raw candidate fallback should be new when candidate label is empty")
 }
 
 func TestPrivateCSVLabelBranches(t *testing.T) {
@@ -1410,6 +1354,7 @@ func TestPrivateCSVLabelBranches(t *testing.T) {
 	csvState := csvParseState{}
 	csvState.captureLabels([]string{"", "sec/op", "CI", "sec/op", "CI", "vs base", "P"})
 	csvState.captureLabels([]string{"", "", "", labelNewTxt})
+
 	require.Empty(t, csvState.baselineLabel,
 		"csv header rows should not set baseline label")
 	require.Empty(t, csvState.candidateLabel,
@@ -1427,27 +1372,19 @@ func TestPrivateCSVLabelBranches(t *testing.T) {
 func TestPrivateDisplayLabelBranches(t *testing.T) {
 	t.Parallel()
 
-	if got := displayLabel(""); got != "" {
-		require.Failf(t, "assertion failed", "empty label = %q, want empty", got)
-	}
-
-	if got := displayLabel("."); got != "." {
-		require.Failf(t, "assertion failed", "dot label = %q, want dot", got)
-	}
+	require.Empty(t, displayLabel(""), "empty label should display as empty")
+	require.Equal(t, ".", displayLabel("."), "dot label should display as dot")
 
 	baselineLabel, candidateLabel := comparisonLabels([]Comparison{{}})
-	if baselineLabel != labelOld || candidateLabel != labelNew {
-		require.Failf(t, "assertion failed", "blank comparison labels = %q/%q, want old/new", baselineLabel, candidateLabel)
-	}
+	require.Equal(t, labelOld, baselineLabel, "blank comparison baseline label should be old")
+	require.Equal(t, labelNew, candidateLabel, "blank comparison candidate label should be new")
 
 	baselineLabel, candidateLabel = comparisonLabels(nil)
-	if baselineLabel != labelOld || candidateLabel != labelNew {
-		require.Failf(t, "assertion failed", "empty comparison labels = %q/%q, want old/new", baselineLabel, candidateLabel)
-	}
+	require.Equal(t, labelOld, baselineLabel, "nil comparison baseline label should be old")
+	require.Equal(t, labelNew, candidateLabel, "nil comparison candidate label should be new")
 
-	if got := winnerLabel(Outcome("unknown"), labelOld, labelNew); got != "" {
-		require.Failf(t, "assertion failed", "unknown outcome winner = %q, want empty", got)
-	}
+	require.Empty(t, winnerLabel(Outcome("unknown"), labelOld, labelNew),
+		"unknown outcome winner should be empty")
 }
 
 func TestWriteVerboseTextHeaderErrorContainsContext(t *testing.T) {
@@ -1458,12 +1395,15 @@ func TestWriteVerboseTextHeaderErrorContainsContext(t *testing.T) {
 	}
 
 	err := report.WriteVerboseText(failingWriter{})
-	require.Error(t, err, "expected header write error")
-
-	if !strings.Contains(err.Error(), "writing text report") {
-		require.Failf(t, "assertion failed", "error = %q, want text output context", err.Error())
-	}
+	require.Error(t, err,
+		"expected header write error")
+	require.ErrorContains(t, err, "writing text report",
+		"expected header write error context")
 }
+
+// ----------------------------------------------------------------------------
+//  Test helpers
+// ----------------------------------------------------------------------------
 
 type failAfterWriter struct {
 	limit  int
@@ -1479,4 +1419,5 @@ func (writer *failAfterWriter) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
+// assert that failAfterWriter implements io.Writer.
 var _ io.Writer = (*failAfterWriter)(nil)

@@ -60,7 +60,8 @@ func parseAlternatives(input string, opts Options) (Report, error) {
 		state.handleLine(scanner.Text())
 	}
 
-	if err := scanner.Err(); err != nil {
+	err := scanner.Err()
+	if err != nil {
 		return Report{}, fmt.Errorf("%w: %w", errScanningRawInput, err)
 	}
 
@@ -118,14 +119,18 @@ func parseRawFile(reader io.Reader) (rawFileParseState, error) {
 		return rawFileParseState{}, fmt.Errorf("%w: %w", errReadingInput, err)
 	}
 
-	state := rawFileParseState{metrics: map[string][]float64{}}
+	var state rawFileParseState
+
+	state.metrics = map[string][]float64{}
+
 	scanner := bufio.NewScanner(strings.NewReader(string(input)))
 
 	for scanner.Scan() {
 		state.handleLine(scanner.Text())
 	}
 
-	if err := scanner.Err(); err != nil {
+	err = scanner.Err()
+	if err != nil {
 		return rawFileParseState{}, fmt.Errorf("%w: %w", errScanningRawFile, err)
 	}
 
@@ -171,7 +176,8 @@ func parseRawFileBenchmarkLine(line string) (string, map[string]float64, bool) {
 		return "", nil, false
 	}
 
-	if _, err := strconv.Atoi(fields[1]); err != nil {
+	_, err := strconv.Atoi(fields[1])
+	if err != nil {
 		return "", nil, false
 	}
 
@@ -208,9 +214,11 @@ func rawFileInconclusive(aState, bState rawFileParseState) *BenchmarkVerdict {
 }
 
 func newAlternativeParseState() alternativeParseState {
-	return alternativeParseState{
-		samples: alternativeSampleSet{},
-	}
+	var zeroState alternativeParseState
+
+	zeroState.samples = make(alternativeSampleSet)
+
+	return zeroState
 }
 
 func (state *alternativeParseState) handleLine(line string) {
@@ -255,23 +263,26 @@ func (state *alternativeParseState) addSample(sample rawBenchmarkSample) {
 }
 
 func parseRawBenchmarkLine(line string) (rawBenchmarkSample, bool) {
+	var zeroSample rawBenchmarkSample
+
 	fields := strings.Fields(line)
 	if len(fields) < rawBenchmarkMinFields {
-		return rawBenchmarkSample{}, false
+		return zeroSample, false
 	}
 
-	if _, err := strconv.Atoi(fields[1]); err != nil {
-		return rawBenchmarkSample{}, false
+	_, err := strconv.Atoi(fields[1])
+	if err != nil {
+		return zeroSample, false
 	}
 
 	parent, label, ok := splitRawBenchmarkName(fields[0])
 	if !ok || len(fields[2:])%rawBenchmarkValueUnit != 0 {
-		return rawBenchmarkSample{}, false
+		return zeroSample, false
 	}
 
 	metrics, ok := parseRawMetrics(fields[2:])
 	if !ok {
-		return rawBenchmarkSample{}, false
+		return zeroSample, false
 	}
 
 	return rawBenchmarkSample{
@@ -301,7 +312,8 @@ func trimCPUSuffix(name string) string {
 		return name
 	}
 
-	if _, err := strconv.Atoi(name[index+1:]); err != nil {
+	_, err := strconv.Atoi(name[index+1:])
+	if err != nil {
 		return name
 	}
 
@@ -570,11 +582,14 @@ func pValueApproximation(baseline, candidate []float64) float64 {
 
 func alternativeInconclusive(parent, reason string) *BenchmarkVerdict {
 	return &BenchmarkVerdict{
-		Benchmark:  parent,
-		Outcome:    Inconclusive,
-		Metrics:    nil,
-		Reason:     "inconclusive alternative input",
-		ReasonCode: reason,
+		Benchmark:      parent,
+		Outcome:        Inconclusive,
+		Winner:         "",
+		BaselineLabel:  "",
+		CandidateLabel: "",
+		Metrics:        nil,
+		Reason:         "inconclusive alternative input",
+		ReasonCode:     reason,
 	}
 }
 
