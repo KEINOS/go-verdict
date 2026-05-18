@@ -4,3 +4,5 @@ config:
   table-column-style: false
   # Disable strict line length enforcement (handled by conventions)
   line-length: false
+  # Allow multiple top-level headings (temporary)
+  single-h1: false
