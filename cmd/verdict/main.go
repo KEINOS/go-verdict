@@ -16,13 +16,11 @@ import (
 )
 
 const (
-	alphaDefault       = 0.05
-	commandSkill       = "skill"
-	flagHelpLong       = "--help"
-	flagHelpShort      = "-h"
-	formatDefault      = "text"
-	minDeltaPctDefault = 0.0
-	modeDefault        = "auto"
+	commandSkill  = "skill"
+	flagHelpLong  = "--help"
+	flagHelpShort = "-h"
+	formatDefault = "text"
+	modeDefault   = "auto"
 )
 
 // Mockable variables for testing.
@@ -245,7 +243,7 @@ func writeReport(report verdict.Report, cliOpts cliOptions, output io.Writer) er
 }
 
 func initialize(args []string) (*verdict.Options, cliOptions, error) {
-	var opts verdict.Options
+	opts := verdict.NewOptions()
 
 	var cliOpts cliOptions
 
@@ -263,7 +261,7 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 		"b", "",
 		"raw benchmark file for side B")
 	flagSet.StringVar(&opts.Mode,
-		"mode", modeDefault,
+		"mode", opts.Mode,
 		"input mode: auto, benchstat, or alternatives")
 	flagSet.StringVar(&opts.Baseline,
 		"baseline", "",
@@ -272,10 +270,10 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 		"candidate", "",
 		"candidate sub-benchmark name for alternatives mode")
 	flagSet.Float64Var(&opts.Alpha,
-		"alpha", alphaDefault,
+		"alpha", opts.Alpha,
 		"p-value threshold")
 	flagSet.Float64Var(&opts.MinDeltaPct,
-		"min-delta", minDeltaPctDefault,
+		"min-delta", opts.MinDeltaPct,
 		"minimum absolute delta percentage treated as practical difference")
 	flagSet.BoolVar(&cliOpts.verbose,
 		"verbose", false,

@@ -1,6 +1,22 @@
-.PHONY: test lint build clean data data-example-mismatch data-benchstat-repeat-fast data-alternatives e2e e2e-readme-pipelines e2e-benchstat e2e-alternatives e2e-ab e2e-insufficient
+.PHONY: help test lint build clean data data-example-mismatch data-benchstat-repeat-fast data-alternatives e2e e2e-readme-pipelines e2e-benchstat e2e-alternatives e2e-ab e2e-insufficient
 
 VERDICT := ./dist/verdict
+
+help:
+	@printf 'Development targets (run from the repository root):\n'
+	@printf '  make test                 Run unit tests with race detector and coverage.\n'
+	@printf '  make lint                 Run mutating fixers: go fix, golangci-lint --fix, markdownlint-cli2 --fix.\n'
+	@printf '  make build                Build ./dist/verdict.\n'
+	@printf '  make clean                Remove generated testdata/*.txt files and ./dist.\n'
+	@printf '\nFixture targets:\n'
+	@printf '  make data                 Regenerate benchmark fixtures in testdata/.\n'
+	@printf '  make data-alternatives    Regenerate the raw alternatives fixture.\n'
+	@printf '\nEnd-to-end targets (build first and assume repo-root paths):\n'
+	@printf '  make e2e                  Run all E2E checks.\n'
+	@printf '  make e2e-benchstat        Check benchstat stdin parsing.\n'
+	@printf '  make e2e-alternatives     Check raw alternatives stdin parsing.\n'
+	@printf '  make e2e-ab               Check explicit raw-file A/B comparison.\n'
+	@printf '  make e2e-insufficient     Check insufficient raw sample guidance.\n'
 
 test:
 	go test -v -cover -race ./...

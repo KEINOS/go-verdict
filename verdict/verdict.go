@@ -38,9 +38,23 @@ const (
 	Inconclusive Outcome = "inconclusive"
 )
 
-// Options controls the statistical and practical thresholds used by Parse.
+// Options controls parser mode, labels, and the statistical and practical
+// thresholds used by Parse and CompareRawFiles.
+//
 // Alpha defaults to 0.05 when left zero; non-zero Alpha values must be finite
-// and greater than 0 and at most 1. MinDeltaPct must be finite and non-negative.
+// and greater than 0 and at most 1. MinDeltaPct defaults to 0 and must be
+// finite and non-negative.
+//
+// Mode accepts "", "auto", "benchstat", or "alternatives". Empty mode is the
+// same as "auto": Parse detects raw go test benchmark rows when possible and
+// otherwise parses benchstat text or CSV input. "benchstat" disables raw input
+// detection. "alternatives" reads raw go test benchmark rows from stdin.
+//
+// Baseline and Candidate select raw alternatives labels. In "alternatives"
+// mode, empty labels default to "original" and "enhanced". In "auto" mode,
+// empty labels allow Parse to prefer an original/enhanced pair when present or
+// infer the only two labels under a parent benchmark. CompareRawFiles ignores
+// Mode, Baseline, and Candidate because its labels come from the two files.
 type Options struct {
 	Alpha       float64
 	MinDeltaPct float64

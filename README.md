@@ -40,6 +40,7 @@ It is useful when you want a clear answer after changing code:
 - [Library Usage](#library-usage)
 - [AI Agent Skill](#ai-agent-skill)
 - [Development](#development)
+- [Contributing](#contributing)
 - [License](#license)
 
 ## Features
@@ -393,6 +394,57 @@ func main() {
 
 `verdict.Options{}` uses the default alpha of `0.05`. `verdict.NewOptions()` returns the same safe defaults for callers that prefer explicit setup. If you set `Alpha`, use a finite value greater than `0` and at most `1`; `MinDeltaPct` must be finite and non-negative.
 
+Parse raw alternatives from stdin by selecting explicit sub-benchmark labels:
+
+```go
+report, err := verdict.Parse(os.Stdin, verdict.Options{
+ Mode:      "alternatives",
+ Baseline:  "original",
+ Candidate: "enhanced",
+})
+if err != nil {
+ panic(err)
+}
+_ = report.WriteText(os.Stdout)
+```
+
+Compare two raw benchmark files as A/B alternatives:
+
+```go
+a, err := os.Open("fast.txt")
+if err != nil {
+ panic(err)
+}
+defer a.Close()
+
+b, err := os.Open("slow.txt")
+if err != nil {
+ panic(err)
+}
+defer b.Close()
+
+report, err := verdict.CompareRawFiles(a, b, verdict.NewOptions())
+if err != nil {
+ panic(err)
+}
+_ = report.WriteJSON(os.Stdout)
+```
+
+Use report outcomes directly in CI checks:
+
+```go
+report, err := verdict.Parse(os.Stdin, verdict.NewOptions())
+if err != nil {
+ panic(err)
+}
+
+for _, item := range report.Verdicts {
+ if item.Outcome == verdict.OldWins || item.Outcome == verdict.TradeOff {
+  os.Exit(1)
+ }
+}
+```
+
 ## AI Agent Skill
 
 To give an AI agent guidance for using `verdict`:
@@ -418,6 +470,17 @@ make e2e
 ```
 
 The `Makefile` also has a `data` target that regenerates files in `testdata/`.
+
+See available development targets:
+
+```sh
+make help
+```
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for the safe development workflow,
+architecture overview, fixture rules, and extension checklist.
 
 ## Project Layout
 

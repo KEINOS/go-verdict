@@ -11,6 +11,8 @@ import (
 	"strings"
 )
 
+// alternativeSampleSet stores raw alternatives as:
+// parent benchmark -> sub-benchmark label -> normalized metric -> samples.
 type alternativeSampleSet map[string]map[string]map[string][]float64
 
 type alternativeParseState struct {
@@ -69,6 +71,8 @@ func parseAlternatives(input string, opts Options) (Report, error) {
 		return inconclusiveReport("malformed-benchmark"), nil
 	}
 
+	// Parsing only records raw samples and input-shape flags. Evaluation below
+	// selects labels, checks sample counts, and applies shared verdict rules.
 	report := state.evaluate(opts)
 	if len(report.Verdicts) == 0 {
 		return state.emptyAlternativeReport(), nil
@@ -92,6 +96,8 @@ func compareRawFiles(aReader io.Reader, bReader io.Reader, opts Options) (Report
 		return Report{Verdicts: []BenchmarkVerdict{*inconclusive}}, nil
 	}
 
+	// Raw-file comparison treats two separate benchmark series as explicit A/B
+	// alternatives, unlike raw stdin mode where labels come from sub-benchmarks.
 	benchmark := aState.name + "_vs_" + bState.name
 
 	rows, ok := compareAlternativeMetrics(
@@ -555,7 +561,8 @@ func deltaPercent(baselineMean, candidateMean float64) float64 {
 }
 
 // pValueApproximation uses a pragmatic normal approximation from repeated
-// samples. It is most useful with the recommended raw sample count or more.
+// samples instead of a heavier statistics dependency. It is most useful with
+// the recommended raw sample count or more.
 func pValueApproximation(baseline, candidate []float64) float64 {
 	baselineMean := mean(baseline)
 	candidateMean := mean(candidate)
