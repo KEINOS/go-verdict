@@ -209,7 +209,7 @@ Or build it from a local clone:
 ```sh
 git clone https://github.com/KEINOS/go-verdict.git
 cd go-verdict
-go build -o ./dist/verdict ./cmd/verdict
+make build
 ```
 
 ## Quick Start
@@ -469,7 +469,16 @@ Generate benchmark fixtures and run the end-to-end check:
 make e2e
 ```
 
-The `Makefile` also has a `data` target that regenerates files in `testdata/`.
+`make build` removes `./dist` before writing `./dist/verdict`, so repeated
+E2E runs are safe even when a stale local binary already exists. The `Makefile`
+also has cleanup and fixture targets:
+
+```sh
+make clean-dist      # remove ./dist
+make clean-testdata  # remove generated testdata/*.txt files
+make clean-all       # remove both generated fixture files and ./dist
+make data            # regenerate benchmark fixtures in testdata/
+```
 
 See available development targets:
 

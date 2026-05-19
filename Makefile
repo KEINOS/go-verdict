@@ -1,4 +1,4 @@
-.PHONY: help test lint build clean data data-example-mismatch data-benchstat-repeat-fast data-alternatives e2e e2e-readme-pipelines e2e-benchstat e2e-alternatives e2e-ab e2e-insufficient
+.PHONY: help test lint build clean-dist clean-testdata clean-all data data-example-mismatch data-benchstat-repeat-fast data-alternatives e2e e2e-readme-pipelines e2e-benchstat e2e-alternatives e2e-ab e2e-insufficient
 
 VERDICT := ./dist/verdict
 
@@ -6,8 +6,10 @@ help:
 	@printf 'Development targets (run from the repository root):\n'
 	@printf '  make test                 Run unit tests with race detector and coverage.\n'
 	@printf '  make lint                 Run mutating fixers: go fix, golangci-lint --fix, markdownlint-cli2 --fix.\n'
-	@printf '  make build                Build ./dist/verdict.\n'
-	@printf '  make clean                Remove generated testdata/*.txt files and ./dist.\n'
+	@printf '  make build                Remove ./dist, then build ./dist/verdict.\n'
+	@printf '  make clean-dist           Remove ./dist.\n'
+	@printf '  make clean-testdata       Remove generated testdata/*.txt files.\n'
+	@printf '  make clean-all            Remove generated testdata/*.txt files and ./dist.\n'
 	@printf '\nFixture targets:\n'
 	@printf '  make data                 Regenerate benchmark fixtures in testdata/.\n'
 	@printf '  make data-alternatives    Regenerate the raw alternatives fixture.\n'
@@ -26,7 +28,7 @@ lint:
 	golangci-lint run --fix --timeout 5m
 	markdownlint-cli2 --fix "**/*.md"
 
-build:
+build: clean-dist
 	mkdir -p ./dist
 	go build -ldflags="-s -w" -trimpath -o $(VERDICT) ./cmd/verdict/main.go
 
@@ -91,6 +93,10 @@ e2e-insufficient: build
 	grep -q 'at least 3 samples' ./testdata/verdict_insufficient_error_E2E.txt
 	grep -q -- '-count=10 or more' ./testdata/verdict_insufficient_error_E2E.txt
 
-clean:
-	rm -f ./testdata/*.txt
+clean-dist:
 	rm -rf ./dist
+
+clean-testdata:
+	rm -f ./testdata/*.txt
+
+clean-all: clean-testdata clean-dist

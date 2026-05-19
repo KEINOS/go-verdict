@@ -9,6 +9,10 @@ evaluation rules, fixtures, and documentation in sync.
 Run project commands from the repository root. The Makefile, Markdown lint
 configuration, fixture paths, and end-to-end checks assume the current working
 directory contains `go.mod`, `Makefile`, and `.markdownlint-cli2.yaml`.
+Keep this guide at the repository root for now so contributor workflow notes
+stay visible beside `README.md`, `Makefile`, and `go.mod`. Reconsider a
+`.github/` location only if the project grows enough to need dedicated
+governance documentation.
 
 Start by checking the worktree:
 
@@ -44,6 +48,16 @@ make lint
 `markdownlint-cli2 --fix`. It can rewrite Go and Markdown files. Run it from
 the repository root so the project configuration is applied.
 
+Build the local CLI with:
+
+```sh
+make build
+```
+
+`make build` removes `./dist` first, then writes `./dist/verdict`. This keeps
+repeated E2E runs from failing when a stale `./dist/verdict` binary already
+exists.
+
 ## End-to-End Checks
 
 The E2E targets build `./dist/verdict`, generate or use files in `testdata/`,
@@ -61,6 +75,12 @@ Use the focused E2E target that matches your change. For example, raw
 alternatives changes usually need `make e2e-alternatives`, while explicit raw
 file comparison changes usually need `make e2e-ab`.
 
+For a fully clean E2E pass, use:
+
+```sh
+make clean-all && make e2e
+```
+
 ## Fixture Regeneration
 
 `make data` regenerates benchmark fixtures under `testdata/`:
@@ -73,6 +93,14 @@ Only regenerate fixtures when benchmark examples, fixture shape, or E2E
 expectations intentionally change. Benchmark data contains normal measurement
 variance, so regenerated files can differ even when behavior did not change.
 Review fixture diffs carefully before committing them.
+
+Cleanup targets are split by artifact type:
+
+```sh
+make clean-dist      # remove ./dist
+make clean-testdata  # remove generated testdata/*.txt files
+make clean-all       # remove both generated fixture files and ./dist
+```
 
 ## Architecture Overview
 
@@ -130,6 +158,8 @@ Use this checklist when extending what `verdict` can read or write:
 - Regenerate fixtures only when fixture contents are intentionally part of the
   change.
 - Run Markdown lint on changed Markdown files from the repository root.
+- If Makefile targets, validation commands, or generated artifact paths change,
+  update `make help` and this contributor guide in the same phase.
 
 ## Markdown
 
