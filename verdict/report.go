@@ -246,8 +246,9 @@ func writeVerboseTextVerdict(writer io.Writer, verdict BenchmarkVerdict) error {
 		}
 	}
 
+	maxMetricNameLen := maxComparisonMetricNameLen(verdict.Metrics)
 	for _, metric := range verdict.Metrics {
-		err = writeTextMetric(writer, metric)
+		err = writeTextMetric(writer, metric, maxMetricNameLen)
 		if err != nil {
 			return err
 		}
@@ -256,14 +257,28 @@ func writeVerboseTextVerdict(writer io.Writer, verdict BenchmarkVerdict) error {
 	return nil
 }
 
-func writeTextMetric(writer io.Writer, metric Comparison) error {
+func maxComparisonMetricNameLen(metrics []Comparison) int {
+	maxLen := 0
+	for _, metric := range metrics {
+		if len(metric.Metric) > maxLen {
+			maxLen = len(metric.Metric)
+		}
+	}
+
+	return maxLen
+}
+
+func writeTextMetric(writer io.Writer, metric Comparison, metricNameWidth int) error {
+	pValue := fmt.Sprintf("%.3g", metric.PValue)
+
 	_, err := fmt.Fprintf(
 		writer,
-		"  %s %-9s %8.2f%% p=%.3g %s\n",
+		"  %s %-*s %8.2f%% p=%12s %s\n",
 		directionMark(metric.Direction),
+		metricNameWidth,
 		metric.Metric,
 		metric.DeltaPct,
-		metric.PValue,
+		pValue,
 		metric.Direction,
 	)
 	if err != nil {

@@ -2,6 +2,7 @@
 package verdict
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ const (
 	optionAlphaName          = "alpha"
 	optionMinDeltaName       = "min-delta"
 	rawBadValue              = "bad"
+	reasonMixed              = "mixed result"
 	reasonSame               = "same"
 	altMode                  = "alternatives"
 	reasonMalformedBenchmark = "malformed-benchmark"
@@ -449,7 +451,7 @@ func TestWriteTextIncludesReasonCodeAndAllMetricMarks(t *testing.T) {
 			{
 				Benchmark:  benchmarkFoo,
 				Outcome:    TradeOff,
-				Reason:     "mixed result",
+				Reason:     reasonMixed,
 				ReasonCode: "example",
 				Metrics: []Comparison{
 					{Metric: metricSecPerOp, DeltaPct: -10, PValue: 0.001, Direction: Improved},
@@ -471,6 +473,43 @@ func TestWriteTextIncludesReasonCodeAndAllMetricMarks(t *testing.T) {
 	}
 }
 
+func TestVerboseTextMetricRowAlignment(t *testing.T) {
+	t.Parallel()
+
+	report := Report{
+		Verdicts: []BenchmarkVerdict{
+			{
+				Benchmark: benchmarkFoo,
+				Outcome:   TradeOff,
+				Reason:    reasonMixed,
+				Metrics: []Comparison{
+					{Metric: "MB/s", DeltaPct: 15.79, PValue: 0.0000123, Direction: Improved},
+					{Metric: metricSecPerOp, DeltaPct: -20, PValue: 0.001, Direction: Improved},
+					{Metric: "allocs/op", DeltaPct: 100, PValue: 1, Direction: Worsened},
+					{Metric: "gc_count/op", DeltaPct: 50, PValue: 0.25, Direction: Worsened},
+				},
+			},
+		},
+	}
+
+	var output strings.Builder
+
+	err := report.WriteVerboseText(&output)
+	require.NoError(t, err)
+
+	expected := strings.Join([]string{
+		"Foo-8: trade-off",
+		"  mixed result",
+		"  + MB/s           15.79% p=    1.23e-05 improved",
+		"  + sec/op        -20.00% p=       0.001 improved",
+		"  - allocs/op     100.00% p=           1 worsened",
+		"  - gc_count/op    50.00% p=        0.25 worsened",
+		"",
+	}, "\n")
+	require.Equal(t, expected, output.String(),
+		"verbose metric rows should align labels, deltas, and p-values")
+}
+
 func TestWriteTextUsesConciseHumanWinner(t *testing.T) {
 	t.Parallel()
 
@@ -489,6 +528,27 @@ func TestWriteTextUsesConciseHumanWinner(t *testing.T) {
 	expect := "Foo-8: new.txt wins\nBar-8: tie\n"
 	actual := output.String()
 	require.Equal(t, expect, actual, "unexpected text report output")
+}
+
+func TestWriteTextConciseOutputUnchanged(t *testing.T) {
+	t.Parallel()
+
+	report := Report{
+		Verdicts: []BenchmarkVerdict{
+			{Benchmark: benchmarkFoo, Outcome: NewWins, CandidateLabel: labelNewTxt, Winner: labelNewTxt, Reason: "wins"},
+			{Benchmark: "Bar-8", Outcome: Tie, Reason: reasonSame},
+			{Benchmark: "Baz-8", Outcome: TradeOff, Reason: reasonMixed},
+		},
+	}
+
+	var output strings.Builder
+
+	err := report.WriteText(&output)
+	require.NoError(t, err)
+
+	expected := "Foo-8: new.txt wins\nBar-8: tie\nBaz-8: trade-off\n"
+	require.Equal(t, expected, output.String(),
+		"concise text output must not change during verbose alignment work")
 }
 
 func TestWriteTextNoVerdictsWritesNothing(t *testing.T) {
@@ -542,6 +602,38 @@ func TestWriteJSONSuccess(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, output.String(), `"benchmark": "`+benchmarkFoo+`"`,
 		"output should contain benchmark name in json")
+}
+
+func TestWriteJSONSemanticOutputUnchanged(t *testing.T) {
+	t.Parallel()
+
+	report := Report{
+		Verdicts: []BenchmarkVerdict{
+			{
+				Benchmark:      benchmarkFoo,
+				Outcome:        NewWins,
+				Winner:         labelCandidate,
+				BaselineLabel:  labelOld,
+				CandidateLabel: labelCandidate,
+				Reason:         "candidate dominates",
+				Metrics: []Comparison{
+					{Metric: metricSecPerOp, DeltaPct: -20, PValue: 0.001, Direction: Improved},
+				},
+			},
+		},
+	}
+
+	var output strings.Builder
+
+	err := report.WriteJSON(&output)
+	require.NoError(t, err)
+
+	var got Report
+
+	err = json.Unmarshal([]byte(output.String()), &got)
+	require.NoError(t, err)
+	require.Equal(t, report, got,
+		"JSON report semantics must not change during verbose alignment work")
 }
 
 func TestWriteJSONErrorContainsContext(t *testing.T) {
@@ -609,7 +701,7 @@ func TestDecideNoMetricsIsInconclusive(t *testing.T) {
 func TestWriteTextMetricErrorContainsContext(t *testing.T) {
 	t.Parallel()
 
-	err := writeTextMetric(failingWriter{}, Comparison{Direction: Same})
+	err := writeTextMetric(failingWriter{}, Comparison{Direction: Same}, 0)
 	require.Error(t, err,
 		"expected metric write error")
 	require.ErrorContains(t, err, "writing text report",
