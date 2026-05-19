@@ -29,8 +29,10 @@ lint:
 	markdownlint-cli2 --fix "**/*.md"
 
 build: clean-dist
-	mkdir -p ./dist
-	go build -ldflags="-s -w" -trimpath -o $(VERDICT) ./cmd/verdict/main.go
+	@printf '\n== Build: compiling ./cmd/verdict/main.go to ./dist/verdict ==\n'
+	@mkdir -p ./dist
+	@go build -ldflags="-s -w" -trimpath -o $(VERDICT) ./cmd/verdict/main.go
+	@$(VERDICT) -h 1> /dev/null && printf 'Built ./dist/verdict successfully.\n' || (printf 'Failed to build ./dist/verdict.\n' && exit 1)
 
 data: data-example-mismatch data-benchstat-repeat-fast data-alternatives
 
@@ -94,9 +96,11 @@ e2e-insufficient: build
 	grep -q -- '-count=10 or more' ./testdata/verdict_insufficient_error_E2E.txt
 
 clean-dist:
-	rm -rf ./dist
+	@printf '\n== Clean: removing ./dist ==\n'
+	@rm -rf ./dist && printf 'Removed ./dist.\n'
 
 clean-testdata:
-	rm -f ./testdata/*.txt
+	@printf '\n== Clean: removing generated testdata/*.txt files ==\n'
+	@rm -f ./testdata/*.txt
 
 clean-all: clean-testdata clean-dist
