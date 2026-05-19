@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	verdictskill "github.com/KEINOS/go-verdict/skill/verdict"
@@ -16,25 +17,34 @@ import (
 )
 
 const (
-	commandSkill  = "skill"
-	flagHelpLong  = "--help"
-	flagHelpShort = "-h"
-	formatDefault = "text"
-	modeDefault   = "auto"
+	commandSkill     = "skill"
+	commandVersion   = "version"
+	defaultRevision  = "unknown"
+	defaultVersion   = "(devel)"
+	displayDevel     = "devel"
+	flagHelpLong     = "--help"
+	flagHelpShort    = "-h"
+	flagVersionLong  = "--version"
+	flagVersionShort = "-v"
+	formatDefault    = "text"
+	modeDefault      = "auto"
+	revisionLen      = 7
+	vcsRevisionKey   = "vcs.revision"
 )
 
 // Mockable variables for testing.
 //
-//nolint:gochecknoglobals // Package-level hook is required for exit mocking.
+//nolint:gochecknoglobals // Package-level hooks are required for CLI-exit and build-info mocking.
 var (
-	osExit = os.Exit
+	debugReadBuildInfo = debug.ReadBuildInfo
+	osExit             = os.Exit
 )
 
 // Pre-defined errors.
 var (
 	errBenchmarkSetMismatch  = errors.New("inconclusive: benchmark names differ")
 	errInsufficientSamples   = errors.New("insufficient samples")
-	errUnexpectedCommandArgs = errors.New("skill command does not accept extra arguments")
+	errUnexpectedCommandArgs = errors.New("command does not accept extra arguments")
 	errUnknownCommand        = errors.New("unknown command")
 	errUseBothAB             = errors.New("use both -a and -b to compare raw benchmark files")
 	errUnknownFormat         = errors.New("unknown format")
@@ -55,16 +65,13 @@ func run() error {
 }
 
 func runCLI(args []string, input io.Reader, output io.Writer) error {
-	if command, hasCommand := topLevelCommand(args); hasCommand {
-		if command != commandSkill {
-			return fmt.Errorf("%w: %s", errUnknownCommand, command)
-		}
+	handled, err := runTopLevelCommand(args, output)
+	if handled {
+		return err
+	}
 
-		if len(args) != 1 {
-			return errUnexpectedCommandArgs
-		}
-
-		return writeString(output, verdictskill.Text)
+	if isVersionRequest(args) {
+		return writeString(output, GetAppVersion()+"\n")
 	}
 
 	if isHelpRequest(args) {
@@ -87,6 +94,27 @@ func runCLI(args []string, input io.Reader, output io.Writer) error {
 	}
 
 	return writeReport(report, cliOpts, output)
+}
+
+func runTopLevelCommand(args []string, output io.Writer) (bool, error) {
+	command, hasCommand := topLevelCommand(args)
+	if !hasCommand {
+		return false, nil
+	}
+
+	if command != commandSkill && command != commandVersion {
+		return true, fmt.Errorf("%w: %s", errUnknownCommand, command)
+	}
+
+	if len(args) != 1 {
+		return true, errUnexpectedCommandArgs
+	}
+
+	if command == commandVersion {
+		return true, writeString(output, GetAppVersion()+"\n")
+	}
+
+	return true, writeString(output, verdictskill.Text)
 }
 
 type cliOptions struct {
@@ -131,12 +159,65 @@ func isHelpRequest(args []string) bool {
 	return len(args) == 1 && (args[0] == flagHelpShort || args[0] == flagHelpLong)
 }
 
+func isVersionRequest(args []string) bool {
+	return len(args) == 1 && (args[0] == flagVersionShort || args[0] == flagVersionLong)
+}
+
 func topLevelCommand(args []string) (string, bool) {
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		return "", false
 	}
 
 	return args[0], true
+}
+
+// GetAppVersion returns the CLI version text without a trailing newline.
+func GetAppVersion() string {
+	buildInfo, ok := debugReadBuildInfo()
+	if !ok || buildInfo == nil {
+		return formatAppVersion("", "")
+	}
+
+	return formatAppVersion(buildInfo.Main.Version, vcsRevision(buildInfo.Settings))
+}
+
+func formatAppVersion(version, revision string) string {
+	if version == defaultVersion {
+		version = ""
+	}
+
+	revision = shortRevision(revision)
+	if version != "" {
+		if revision == "" {
+			revision = defaultRevision
+		}
+
+		return fmt.Sprintf("%s (%s)", version, revision)
+	}
+
+	if revision == "" {
+		revision = defaultRevision
+	}
+
+	return fmt.Sprintf("%s (%s)", revision, displayDevel)
+}
+
+func vcsRevision(settings []debug.BuildSetting) string {
+	for _, setting := range settings {
+		if setting.Key == vcsRevisionKey {
+			return setting.Value
+		}
+	}
+
+	return ""
+}
+
+func shortRevision(revision string) string {
+	if len(revision) <= revisionLen {
+		return revision
+	}
+
+	return revision[:revisionLen]
 }
 
 func buildRawFileReport(opts *verdict.Options, cliOpts cliOptions) (verdict.Report, error) {
@@ -324,10 +405,14 @@ Note:
 Commands:
   skill
       Print the AI Agent skill text.
+  version
+      Print the command version.
 
 Options:
   --format text|json
       Output format. Default: text.
+  -v, --version
+      Print the command version.
   --mode auto|benchstat|alternatives
       Input mode. Default: auto.
   --verbose

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -21,6 +22,8 @@ const (
 	formatJSON   = "json"
 	modeAlt      = "alternatives"
 	optionAlpha  = "alpha"
+	testRevision = "0123456789abcdef"
+	testVersion  = "v1.2.3"
 	winningInput = "name          old time/op  new time/op  delta\n" +
 		"Foo-8         10.0ns ± 1%   8.0ns ± 1%  -20.00% (p=0.001 n=10+10)\n"
 	alternativesInput = "BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
@@ -132,11 +135,104 @@ func TestRunCLIHelpWritesSamplePolicy(t *testing.T) {
 	for _, want := range []string{
 		"Usage:\n  verdict [command] [options]",
 		"Commands:\n  skill",
+		"  version",
 		"Options:\n  --format text|json",
+		"  -v, --version",
 	} {
 		require.Contains(t, out.String(), want,
 			"help output should include command and option sections")
 	}
+}
+
+//nolint:paralleltest // Uses process-wide debugReadBuildInfo mock.
+func TestGetAppVersion(t *testing.T) {
+	tests := []struct {
+		name      string
+		buildInfo *debug.BuildInfo
+		ok        bool
+		want      string
+	}{
+		{
+			name:      "build info unavailable",
+			buildInfo: nil,
+			ok:        false,
+			want:      "unknown (devel)",
+		},
+		{
+			name:      "uses module version and short revision",
+			buildInfo: testBuildInfo(testVersion, testRevision),
+			ok:        true,
+			want:      "v1.2.3 (0123456)",
+		},
+		{
+			name:      "keeps short revision as-is",
+			buildInfo: testBuildInfo(testVersion, "abc123"),
+			ok:        true,
+			want:      "v1.2.3 (abc123)",
+		},
+		{
+			name:      "uses unknown revision when version exists and revision is missing",
+			buildInfo: testBuildInfo("v2.0.0", ""),
+			ok:        true,
+			want:      "v2.0.0 (unknown)",
+		},
+		{
+			name:      "uses revision with devel fallback when version is missing",
+			buildInfo: testBuildInfo("", testRevision),
+			ok:        true,
+			want:      "0123456 (devel)",
+		},
+		{
+			name:      "treats devel version as missing release version",
+			buildInfo: testBuildInfo(defaultVersion, testRevision),
+			ok:        true,
+			want:      "0123456 (devel)",
+		},
+		{
+			name:      "falls back when version and revision are empty",
+			buildInfo: testBuildInfo("", ""),
+			ok:        true,
+			want:      "unknown (devel)",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			restoreDebugReadBuildInfo := mockDebugReadBuildInfo(test.buildInfo, test.ok)
+			t.Cleanup(restoreDebugReadBuildInfo)
+
+			require.Equal(t, test.want, GetAppVersion(),
+				"app version should match build info policy")
+		})
+	}
+}
+
+//nolint:paralleltest // Uses process-wide debugReadBuildInfo mock.
+func TestRunCLIVersionRequests(t *testing.T) {
+	restoreDebugReadBuildInfo := mockDebugReadBuildInfo(testBuildInfo(testVersion, testRevision), true)
+	t.Cleanup(restoreDebugReadBuildInfo)
+
+	for _, args := range [][]string{
+		{commandVersion},
+		{flagVersionLong},
+		{flagVersionShort},
+	} {
+		var out strings.Builder
+
+		err := runCLI(args, strings.NewReader("ignored"), &out)
+		require.NoError(t, err,
+			"version request should succeed")
+		require.Equal(t, "v1.2.3 (0123456)\n", out.String(),
+			"version output should be deterministic")
+	}
+}
+
+func TestRunCLIVersionRejectsExtraArgs(t *testing.T) {
+	t.Parallel()
+
+	err := runCLI([]string{commandVersion, "extra"}, strings.NewReader("ignored"), &strings.Builder{})
+	require.ErrorIs(t, err, errUnexpectedCommandArgs,
+		"extra args should return 'errUnexpectedCommandArgs' error")
 }
 
 func TestRunCLIHelpWriteErrorContainsContext(t *testing.T) {
@@ -537,4 +633,29 @@ func verdictReport(reasonCode string) verdict.Report {
 	return verdict.Report{
 		Verdicts: []verdict.BenchmarkVerdict{zeroBenchmarkVerdict},
 	}
+}
+
+func mockDebugReadBuildInfo(info *debug.BuildInfo, ok bool) func() {
+	oldDebugReadBuildInfo := debugReadBuildInfo
+
+	debugReadBuildInfo = func() (*debug.BuildInfo, bool) {
+		return info, ok
+	}
+
+	return func() {
+		debugReadBuildInfo = oldDebugReadBuildInfo
+	}
+}
+
+func testBuildInfo(version, revision string) *debug.BuildInfo {
+	info := new(debug.BuildInfo)
+	info.Main.Version = version
+
+	if revision != "" {
+		info.Settings = []debug.BuildSetting{
+			{Key: vcsRevisionKey, Value: revision},
+		}
+	}
+
+	return info
 }

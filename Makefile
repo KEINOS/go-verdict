@@ -32,7 +32,11 @@ build: clean-dist
 	@printf '\n== Build: compiling ./cmd/verdict/main.go to ./dist/verdict ==\n'
 	@mkdir -p ./dist
 	@go build -ldflags="-s -w" -trimpath -o $(VERDICT) ./cmd/verdict/main.go
-	@$(VERDICT) -h 1> /dev/null && printf 'Built ./dist/verdict successfully.\n' || (printf 'Failed to build ./dist/verdict.\n' && exit 1)
+	@$(VERDICT) -v 1> /dev/null && \
+		$(VERDICT) --version 1> /dev/null && \
+		$(VERDICT) version 1> /dev/null && \
+		printf 'Built ./dist/verdict successfully.\n' || \
+		(printf 'Failed to build ./dist/verdict.\n' && exit 1)
 
 data: data-example-mismatch data-benchstat-repeat-fast data-alternatives
 

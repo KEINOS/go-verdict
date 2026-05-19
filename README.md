@@ -284,9 +284,15 @@ Commands:
   skill
       Print the AI Agent skill text.
 
+  version
+      Print the command version.
+
 Options:
   --format text|json
       Output format. Default: text.
+
+  -v, --version
+      Print the command version.
 
   --mode auto|benchstat|alternatives
       Input mode. Default: auto.
