@@ -1,4 +1,5 @@
 *.md
+*.txt
 testdata/*.txt
 .claude
 .vscode
