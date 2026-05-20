@@ -147,6 +147,25 @@ func TestRunCLIHelpWritesSamplePolicy(t *testing.T) {
 	}
 }
 
+func TestRunCLIHelpExplainsInputModes(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := runCLI([]string{flagHelpLong}, strings.NewReader(""), &out)
+	require.NoError(t, err,
+		"failed to print help output")
+
+	for _, want := range []string{
+		"auto: detect benchstat output or raw go test -bench output.",
+		"benchstat: read already-compared benchstat text or CSV.",
+		"alternatives: compare raw sub-benchmarks, such as original vs enhanced.",
+	} {
+		require.Contains(t, out.String(), want,
+			"help output should explain each input mode")
+	}
+}
+
 //nolint:paralleltest // Uses process-wide debugReadBuildInfo mock.
 func TestGetAppVersion(t *testing.T) {
 	tests := []struct {

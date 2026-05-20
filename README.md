@@ -296,6 +296,9 @@ Options:
 
   --mode auto|benchstat|alternatives
       Input mode. Default: auto.
+      auto: detect benchstat output or raw go test -bench output.
+      benchstat: read already-compared benchstat text or CSV.
+      alternatives: compare raw sub-benchmarks, such as original vs enhanced.
 
   --verbose
       Include verdict reason and metric details in text output.
