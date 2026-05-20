@@ -31,8 +31,10 @@ const (
 		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n"
 )
 
-var errTestWrite = errors.New("test write error")
-var errTestSubcmd = errors.New("test subcommand error")
+var (
+	errTestWrite  = errors.New("test write error")
+	errTestSubcmd = errors.New("test subcommand error")
+)
 
 type failingWriter struct{}
 

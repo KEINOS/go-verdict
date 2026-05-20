@@ -3,6 +3,9 @@ package skill
 
 import _ "embed"
 
+//go:embed SKILL.md
+var text string
+
 // Command implements the verdict CLI skill subcommand.
 type Command struct{}
 
@@ -15,6 +18,3 @@ func New() Command {
 func (Command) Run() (string, error) {
 	return text, nil
 }
-
-//go:embed SKILL.md
-var text string

@@ -113,6 +113,10 @@ func runTopLevelCommand(args []string, output io.Writer) (bool, error) {
 	return true, runSubcmd(subCommand, output, command == commandVersion)
 }
 
+// ----------------------------------------------------------------------------
+//  SubCommand Handling
+// ----------------------------------------------------------------------------
+
 type subcmd interface {
 	Run() (string, error)
 }

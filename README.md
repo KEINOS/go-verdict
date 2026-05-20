@@ -29,7 +29,7 @@ It is useful when you want a clear answer after changing code:
 - [Workflows](#workflows)
   - [Local Alternative Comparison](#local-alternative-comparison)
   - [Named File A/B Comparison](#named-file-ab-comparison)
-  - [PR or Before/After Comparison](#pr-or-beforeafter-comparison)
+  - [Before/After Comparison](#beforeafter-comparison)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
@@ -61,23 +61,24 @@ It is useful when you want a clear answer after changing code:
 
 ### Local Alternative Comparison
 
-Use this workflow for a quick local test before a PR. Use it when the original and alternative implementations are sub-benchmarks in the same test file.
+Use this workflow for a **quick local test before actually changing code**.
+Use it when the original and alternative implementations are sub-benchmarks in the same test file.
 
 Example benchmark:
 
 ```go
 func BenchmarkMyHeavyFunc(b *testing.B) {
- b.Run("original", func(b *testing.B) {
-  for b.Loop() {
-   ExampleOriginal()
-  }
- })
+    b.Run("original", func(b *testing.B) {
+        for b.Loop() {
+            ExampleOriginal()
+        }
+    })
 
- b.Run("enhanced", func(b *testing.B) {
-  for b.Loop() {
-   ExampleEnhanced()
-  }
- })
+    b.Run("enhanced", func(b *testing.B) {
+        for b.Loop() {
+            ExampleEnhanced()
+        }
+    })
 }
 ```
 
@@ -93,13 +94,11 @@ Then compare the two sub-benchmarks:
 verdict < alternatives.txt
 ```
 
-Auto mode first checks whether both `original` and `enhanced` exist under the
-same parent benchmark. If both exist, it compares that pair.
+Auto mode first checks whether both `original` and `enhanced` exist under the same parent benchmark. If both exist, it compares that pair.
 
-Otherwise, auto mode compares one pair only when the parent benchmark has
-exactly two sub-benchmark labels.
+Otherwise, auto mode compares one pair only when the parent benchmark has exactly two sub-benchmark labels.
 
-Use explicit labels when the raw benchmark output has more than two alternatives or non-default names:
+Use explicit labels when the [raw benchmark output](https://go.googlesource.com/proposal/+/master/design/14313-benchmark-format.md) has more than two alternatives or non-default names:
 
 ```sh
 verdict --mode alternatives --baseline original --candidate enhanced < alternatives.txt
@@ -115,7 +114,7 @@ The outcome meaning is from the new option side:
 | `trade-off` | Some metrics improved, but other metrics regressed. |
 | `inconclusive` | The input does not contain enough comparable samples. |
 
-Raw benchmark comparison supports `ns/op`, `B/op`, and `allocs/op` from `go test` output. It computes deltas and approximate p-values from repeated samples, then applies the same `--alpha`, `--min-delta`, and verdict rules as before/after comparison. It needs at least 3 samples per benchmark side; with fewer samples, the library report is `inconclusive` and the CLI prints an actionable error.
+Raw benchmark comparison supports `ns/op`, `B/op`, and `allocs/op` from `go test` output. It computes deltas and approximate `p`-values from repeated samples, then applies the same `--alpha`, `--min-delta`, and verdict rules as before/after comparison. It needs at least 3 samples per benchmark side; with fewer samples, the library report is `inconclusive` and the CLI prints an actionable error.
 
 Run with enough samples. `-count=8` is accepted for quick local checks, but `-count=10` or more is recommended for stable results. If you use only `-count=2`, `verdict` asks you to run more samples:
 
@@ -123,31 +122,11 @@ Run with enough samples. `-count=8` is accepted for quick local checks, but `-co
 error: insufficient samples: need at least 3 samples per benchmark side; recommend -count=10 or more for stable results
 ```
 
-The raw-sample p-value is a pragmatic normal approximation from the two sample means and variances. Very small accepted sample counts, such as 3 to 5 per side, can be useful for quick feedback but are weaker evidence than the recommended `-count=10` or more. Benchmark distributions can be noisy or non-normal, so treat close results as guidance to collect more samples.
+The raw-sample `p`-value is a pragmatic normal approximation from the two sample means and variances. Very small accepted sample counts, such as 3 to 5 per side, can be useful for quick feedback but are weaker evidence than the recommended `-count=10` or more. Benchmark distributions can be noisy or non-normal, so treat close results as guidance to collect more samples.
 
 ### Named File A/B Comparison
 
-Use this workflow when two benchmark functions have different names, but they do the same job.
-
-For example, this is not a valid before/after `benchstat` comparison:
-
-```sh
-benchstat fast.txt slow.txt | verdict
-```
-
-If `fast.txt` contains `BenchmarkMyHeavyFuncFast` and `slow.txt` contains `BenchmarkMyHeavyFuncSlow`, the benchmark names are different. `benchstat` compares the same benchmark name before and after a change, so `verdict` errors.
-
-In that case, use `-a` and `-b` to say: "compare these two raw benchmark files as A/B alternatives."
-
-```sh
-verdict -a fast.txt -b slow.txt
-```
-
-Example output:
-
-```text
-BenchmarkMyHeavyFuncFast_vs_BenchmarkMyHeavyFuncSlow: BenchmarkMyHeavyFuncFast wins
-```
+Use this workflow when **two benchmark functions have different names**, but they do the same job.
 
 Each file should contain one benchmark series, collected with repeated samples:
 
@@ -157,9 +136,28 @@ go test -run='^$' -bench=BenchmarkMyHeavyFuncSlow -count=10 ./your/package > slo
 verdict -a fast.txt -b slow.txt
 ```
 
-### PR or Before/After Comparison
+If `fast.txt` contains `BenchmarkMyHeavyFuncFast` and `slow.txt` contains `BenchmarkMyHeavyFuncSlow`, the benchmark names are different. `benchstat` compares the same benchmark name before and after a change, so `verdict` errors.
 
-Use this workflow when you compare benchmark results from two different code states, such as before and after a pull request.
+For example, this is not a valid before/after `benchstat` comparison:
+
+```shellsession
+$ benchstat fast.txt slow.txt | verdict
+error: inconclusive: benchmark names differ
+benchstat compares the same benchmark before and after a change.
+To compare two different benchmark functions as A/B alternatives, pass the raw benchmark files:
+  verdict -a fast.txt -b slow.txt
+```
+
+In that case, use `-a` and `-b` to say: "compare these two raw benchmark files as A/B alternatives."
+
+```shellsession
+$ verdict -a fast.txt -b slow.txt
+BenchmarkMyHeavyFuncFast_vs_BenchmarkMyHeavyFuncSlow: BenchmarkMyHeavyFuncFast wins
+```
+
+### Before/After Comparison
+
+Use this workflow when you compare benchmark results from **two different code states**, such as before and after edits.
 
 Collect old benchmark results:
 
@@ -167,7 +165,7 @@ Collect old benchmark results:
 go test -run='^$' -bench=. -benchmem -count=20 > old.txt
 ```
 
-Change your code, then collect new benchmark results:
+Change your code or checkout a target branch, then collect new benchmark results:
 
 ```sh
 go test -run='^$' -bench=. -benchmem -count=20 > new.txt
@@ -185,16 +183,28 @@ If one side wins, `verdict` uses the file labels from the `benchstat` header:
 ExampleFast-10: new.txt wins
 ```
 
+> [!INFO]
+> `verdict` parses the [Go benchmark format](https://go.googlesource.com/proposal/+/master/design/14313-benchmark-format.md) and `benchstat` output. Therefore, you can use it with any tool that produces compatible output.
+> For example, you can also compare the speed of the Go compiler using [compilebench](https://pkg.go.dev/golang.org/x/tools/cmd/compilebench) and [toolstash](https://pkg.go.dev/golang.org/x/tools/cmd/toolstash).
+>
+> ```sh
+> compilebench -count 10 -compile $(toolstash -n compile) >old.txt
+> compilebench -count 10 >new.txt
+> benchstat old.txt new.txt | verdict
+> ```
+
+
 ## Requirements
 
 - Go 1.26.3 or later, as declared in `go.mod`.
-- `benchstat` for PR or before/after comparison.
+- Recommended:
+  - [benchstat](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat) for before/after comparison.
 
-Install `benchstat` if you do not already have it:
+    Install `benchstat` if you do not already have it:
 
-```sh
-go install golang.org/x/perf/cmd/benchstat@latest
-```
+    ```sh
+    go install golang.org/x/perf/cmd/benchstat@latest
+    ```
 
 ## Installation
 
