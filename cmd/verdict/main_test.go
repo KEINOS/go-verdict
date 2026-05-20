@@ -126,6 +126,9 @@ func TestRunCLIHelpWritesSamplePolicy(t *testing.T) {
 	err := runCLI([]string{flagHelpLong}, strings.NewReader(""), &out)
 	require.NoError(t, err,
 		"failed to print help output")
+	require.Contains(t, out.String(),
+		"Turn Go benchmark results into a winner, tie, or trade-off.",
+		"help opening sentence should match the approved Phase 27 wording")
 
 	for _, want := range sampleCountWording() {
 		require.Contains(t, out.String(), want,

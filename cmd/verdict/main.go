@@ -393,7 +393,7 @@ func validateCLIOptions(opts verdict.Options) error {
 
 func flagHelpText() string {
 	return fmt.Sprintf(
-		`Small command for Go benchmarks. It reads benchmark results and prints an A/B verdict.
+		`Turn Go benchmark results into a winner, tie, or trade-off.
 
 Usage:
   verdict [command] [options]

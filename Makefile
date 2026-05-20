@@ -21,6 +21,9 @@ help:
 	@printf '  make e2e-insufficient     Check insufficient raw sample guidance.\n'
 
 test:
+	go test -cover -race ./...
+
+test-verbose:
 	go test -v -cover -race ./...
 
 lint:
@@ -35,6 +38,7 @@ build: clean-dist
 	@$(VERDICT) -v 1> /dev/null && \
 		$(VERDICT) --version 1> /dev/null && \
 		$(VERDICT) version 1> /dev/null && \
+		$(VERDICT) -h 1> /dev/null && \
 		printf 'Built ./dist/verdict successfully.\n' || \
 		(printf 'Failed to build ./dist/verdict.\n' && exit 1)
 

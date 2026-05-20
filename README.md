@@ -1,6 +1,6 @@
 # go-verdict
 
-`verdict` is a small command for Go benchmarks. It reads benchmark results and prints an A/B verdict.
+`verdict` turns Go benchmark results into a winner, tie, or trade-off.
 
 ```sh
 # Compare benchmark results before and after a change:
