@@ -2,6 +2,7 @@
 testdata/*.txt
 .claude
 .vscode
+.agent-notes/
 main
 dist
 
