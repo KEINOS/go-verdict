@@ -9,36 +9,28 @@ import (
 	"io"
 	"math"
 	"os"
-	"runtime/debug"
 	"strings"
 
-	verdictskill "github.com/KEINOS/go-verdict/skill/verdict"
+	"github.com/KEINOS/go-verdict/cmd/verdict/internal/appver"
+	"github.com/KEINOS/go-verdict/cmd/verdict/internal/skill"
 	"github.com/KEINOS/go-verdict/verdict"
 )
 
 const (
 	commandSkill     = "skill"
 	commandVersion   = "version"
-	defaultRevision  = "unknown"
-	defaultVersion   = "(devel)"
-	displayDevel     = "devel"
 	flagHelpLong     = "--help"
 	flagHelpShort    = "-h"
 	flagVersionLong  = "--version"
 	flagVersionShort = "-v"
 	formatDefault    = "text"
 	modeDefault      = "auto"
-	revisionLen      = 7
-	vcsRevisionKey   = "vcs.revision"
 )
 
-// Mockable variables for testing.
+// Mockable variable for testing.
 //
-//nolint:gochecknoglobals // Package-level hooks are required for CLI-exit and build-info mocking.
-var (
-	debugReadBuildInfo = debug.ReadBuildInfo
-	osExit             = os.Exit
-)
+//nolint:gochecknoglobals // Package-level hook is required for CLI-exit mocking.
+var osExit = os.Exit
 
 // Pre-defined errors.
 var (
@@ -71,7 +63,7 @@ func runCLI(args []string, input io.Reader, output io.Writer) error {
 	}
 
 	if isVersionRequest(args) {
-		return writeString(output, GetAppVersion()+"\n")
+		return runSubcmd(appver.New(), output, true)
 	}
 
 	if isHelpRequest(args) {
@@ -110,11 +102,36 @@ func runTopLevelCommand(args []string, output io.Writer) (bool, error) {
 		return true, errUnexpectedCommandArgs
 	}
 
-	if command == commandVersion {
-		return true, writeString(output, GetAppVersion()+"\n")
+	var subCommand subcmd
+
+	if command == commandSkill {
+		subCommand = skill.New()
+	} else {
+		subCommand = appver.New()
 	}
 
-	return true, writeString(output, verdictskill.Text)
+	return true, runSubcmd(subCommand, output, command == commandVersion)
+}
+
+type subcmd interface {
+	Run() (string, error)
+}
+
+func runSubcmd(command subcmd, output io.Writer, addTrailingNewline bool) error {
+	if command == nil {
+		return errUnknownCommand
+	}
+
+	text, err := command.Run()
+	if err != nil {
+		return fmt.Errorf("running subcommand: %w", err)
+	}
+
+	if addTrailingNewline {
+		text += "\n"
+	}
+
+	return writeString(output, text)
 }
 
 type cliOptions struct {
@@ -169,55 +186,6 @@ func topLevelCommand(args []string) (string, bool) {
 	}
 
 	return args[0], true
-}
-
-// GetAppVersion returns the CLI version text without a trailing newline.
-func GetAppVersion() string {
-	buildInfo, ok := debugReadBuildInfo()
-	if !ok || buildInfo == nil {
-		return formatAppVersion("", "")
-	}
-
-	return formatAppVersion(buildInfo.Main.Version, vcsRevision(buildInfo.Settings))
-}
-
-func formatAppVersion(version, revision string) string {
-	if version == defaultVersion {
-		version = ""
-	}
-
-	revision = shortRevision(revision)
-	if version != "" {
-		if revision == "" {
-			revision = defaultRevision
-		}
-
-		return fmt.Sprintf("%s (%s)", version, revision)
-	}
-
-	if revision == "" {
-		revision = defaultRevision
-	}
-
-	return fmt.Sprintf("%s (%s)", revision, displayDevel)
-}
-
-func vcsRevision(settings []debug.BuildSetting) string {
-	for _, setting := range settings {
-		if setting.Key == vcsRevisionKey {
-			return setting.Value
-		}
-	}
-
-	return ""
-}
-
-func shortRevision(revision string) string {
-	if len(revision) <= revisionLen {
-		return revision
-	}
-
-	return revision[:revisionLen]
 }
 
 func buildRawFileReport(opts *verdict.Options, cliOpts cliOptions) (verdict.Report, error) {

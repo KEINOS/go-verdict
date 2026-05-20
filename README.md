@@ -462,7 +462,8 @@ To give an AI agent guidance for using `verdict`:
 verdict skill > SKILL.md
 ```
 
-The canonical source is [skill/verdict/SKILL.md](skill/verdict/SKILL.md).
+The canonical source is
+[cmd/verdict/internal/skill/SKILL.md](cmd/verdict/internal/skill/SKILL.md).
 
 ## Development
 

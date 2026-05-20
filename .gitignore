@@ -7,7 +7,9 @@ dist
 
 !README.md
 !CONTRIBUTING.md
-!skill/
-!skill/verdict/
-!skill/verdict/SKILL.md
-!skill/verdict/README.md
+!cmd/
+!cmd/verdict/
+!cmd/verdict/internal/
+!cmd/verdict/internal/skill/
+!cmd/verdict/internal/skill/SKILL.md
+!cmd/verdict/internal/skill/README.md
