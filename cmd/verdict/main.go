@@ -13,11 +13,7 @@ import (
 var osExit = os.Exit
 
 func main() {
-	exitOnError(run())
-}
-
-func run() error {
-	return runCLI(os.Args[1:], os.Stdin, os.Stdout)
+	exitOnError(runCLI(os.Args[1:], os.Stdin, os.Stdout))
 }
 
 func runCLI(args []string, input io.Reader, output io.Writer) error {
