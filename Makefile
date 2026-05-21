@@ -32,9 +32,9 @@ lint:
 	markdownlint-cli2 --fix "**/*.md"
 
 build: clean-dist
-	@printf '\n== Build: compiling ./cmd/verdict/main.go to ./dist/verdict ==\n'
+	@printf '\n== Build: compiling ./cmd/verdict to ./dist/verdict ==\n'
 	@mkdir -p ./dist
-	@go build -ldflags="-s -w" -trimpath -o $(VERDICT) ./cmd/verdict/main.go
+	@go build -ldflags="-s -w" -trimpath -o $(VERDICT) ./cmd/verdict
 	@$(VERDICT) -v 1> /dev/null && \
 		$(VERDICT) --version 1> /dev/null && \
 		$(VERDICT) version 1> /dev/null && \

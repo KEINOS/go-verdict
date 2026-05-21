@@ -193,7 +193,6 @@ ExampleFast-10: new.txt wins
 > benchstat old.txt new.txt | verdict
 > ```
 
-
 ## Requirements
 
 - Go 1.26.3 or later, as declared in `go.mod`.
