@@ -7,6 +7,11 @@ import (
 	"os"
 )
 
+const (
+	// AppDescription holds the application description (approved Phase 27 wording).
+	AppDescription = "Turn Go benchmark results into a winner, tie, or trade-off."
+)
+
 // Mockable variable for testing.
 //
 //nolint:gochecknoglobals // Package-level hook is required for CLI-exit mocking.

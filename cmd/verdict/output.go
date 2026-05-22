@@ -46,7 +46,7 @@ func writeString(output io.Writer, text string) error {
 
 func flagHelpText() string {
 	return fmt.Sprintf(
-		`Turn Go benchmark results into a winner, tie, or trade-off.
+		`%s
 
 Usage:
   verdict [command] [options]
@@ -86,6 +86,7 @@ Options:
   --min-delta value
       Minimum absolute delta percentage to treat as a practical difference. Must be non-negative. Default: 0.0.
  `,
+		AppDescription,
 		verdict.RawComparisonMinSamples,
 		verdict.RecommendedRawSamples,
 	)

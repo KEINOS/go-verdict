@@ -10,37 +10,42 @@ import (
 )
 
 const (
-	commandSkill   = "skill"
-	commandVersion = "version"
+	cmdSkill   = "skill"
+	cmdVersion = "version"
 )
 
+type subcmd interface {
+	Run() (string, error)
+}
+
 func runTopLevelCommand(args []string, output io.Writer) (bool, error) {
-	command, hasCommand := topLevelCommand(args)
-	if !hasCommand {
-		return false, nil
+	const (
+		commandHandled   = true  // Args consumed as a top-level command.
+		commandUnhandled = false // Continue with normal CLI parsing.
+	)
+
+	command, hasSubCommand := topLevelCommand(args)
+	if !hasSubCommand {
+		return commandUnhandled, nil
 	}
 
-	if command != commandSkill && command != commandVersion {
-		return true, fmt.Errorf("%w: %s", errUnknownCommand, command)
+	if command != cmdSkill && command != cmdVersion {
+		return commandHandled, fmt.Errorf("%w: %s", errUnknownCommand, command)
 	}
 
 	if len(args) != 1 {
-		return true, errUnexpectedCommandArgs
+		return commandHandled, errUnexpectedCommandArgs
 	}
 
 	var subCommand subcmd
 
-	if command == commandSkill {
+	if command == cmdSkill {
 		subCommand = skill.New()
 	} else {
 		subCommand = appver.New()
 	}
 
-	return true, runSubcmd(subCommand, output, command == commandVersion)
-}
-
-type subcmd interface {
-	Run() (string, error)
+	return commandHandled, runSubcmd(subCommand, output, command == cmdVersion)
 }
 
 func runSubcmd(command subcmd, output io.Writer, addTrailingNewline bool) error {

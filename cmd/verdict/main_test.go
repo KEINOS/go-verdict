@@ -36,23 +36,21 @@ var (
 	errTestSubcmd = errors.New("test subcommand error")
 )
 
-type failingWriter struct{}
+// ----------------------------------------------------------------------------
+//  Data Providers
+// ----------------------------------------------------------------------------
 
-func (failingWriter) Write(_ []byte) (int, error) {
-	return 0, errTestWrite
+// Data Provider for consistent **sample count** wording.
+//
+//nolint:gochecknoglobals // required for shared test data provider
+var sampleCountWording = []string{
+	fmt.Sprintf("at least %d samples", verdict.RawComparisonMinSamples),
+	fmt.Sprintf("-count=%d or more", verdict.RecommendedRawSamples),
 }
 
-type failingReader struct{}
-
-func (failingReader) Read(_ []byte) (int, error) {
-	return 0, errTestWrite
-}
-
-type failingSubcmd struct{}
-
-func (failingSubcmd) Run() (string, error) {
-	return "", errTestSubcmd
-}
+// ----------------------------------------------------------------------------
+//  Unit Tests
+// ----------------------------------------------------------------------------
 
 //nolint:paralleltest // Uses process-wide mocks (os.Args and osExit).
 func Test_main_fail(t *testing.T) {
@@ -65,23 +63,24 @@ func Test_main_fail(t *testing.T) {
 		os.Args = oldOsArgs
 	})
 
-	// Mock os.Exit
+	// Mock os.Exit to panic instead of os.Exit
 	osExit = func(code int) {
-		// panic instead of os.Exit to capture the exit code
 		if code != 0 {
-			panic(fmt.Sprintf("exit with code %d", code))
+			//nolint:err113 // allow dynamic err for test
+			panic(fmt.Errorf("exit with code %d", code))
 		}
 	}
 
-	// Mock args
+	// Mock command args
 	os.Args = []string{
 		t.Name(),
 		"--invalid-flag",
 	}
 
 	// Require panic due to invalid flag
-	require.Panics(t, func() { main() },
-		"invalid flag should error")
+	expectContains := "exit with code 1" // mocked err msg
+	require.PanicsWithError(t, expectContains, func() { main() },
+		"invalid flag should error with msg")
 }
 
 func TestRunCLITextFormat(t *testing.T) {
@@ -89,9 +88,14 @@ func TestRunCLITextFormat(t *testing.T) {
 
 	var out strings.Builder
 
-	err := runCLI([]string{flagFormat, formatText}, strings.NewReader(winningInput), &out)
+	err := runCLI(
+		[]string{flagFormat, formatText},
+		strings.NewReader(winningInput),
+		&out,
+	)
 	require.NoError(t, err,
 		"failed to run CLI in text format")
+
 	require.Contains(t, out.String(), "Foo-8: new wins",
 		"output should include benchmark verdict")
 }
@@ -101,12 +105,21 @@ func TestRunCLIVerboseTextFormat(t *testing.T) {
 
 	var out strings.Builder
 
-	err := runCLI([]string{"--verbose"}, strings.NewReader(winningInput), &out)
+	err := runCLI(
+		[]string{"--verbose"},
+		strings.NewReader(winningInput),
+		&out,
+	)
 	require.NoError(t, err,
 		"failed to run CLI in verbose mode")
 
 	got := out.String()
-	for _, want := range []string{"Foo-8: new wins", "Pareto-superior", "+ sec/op"} {
+
+	for _, want := range []string{
+		"Foo-8: new wins",
+		"Pareto-superior",
+		"+ sec/op",
+	} {
 		require.Contains(t, got, want,
 			"verbose output should contain expected snippet")
 	}
@@ -117,9 +130,14 @@ func TestRunCLIJSONFormat(t *testing.T) {
 
 	var out strings.Builder
 
-	err := runCLI([]string{flagFormat, formatJSON}, strings.NewReader(winningInput), &out)
+	err := runCLI(
+		[]string{flagFormat, formatJSON},
+		strings.NewReader(winningInput),
+		&out,
+	)
 	require.NoError(t, err,
 		"failed to run CLI in json format")
+
 	require.Contains(t, out.String(), `"outcome": "new-wins"`,
 		"json output should include new-wins outcome")
 }
@@ -129,14 +147,19 @@ func TestRunCLIHelpWritesSamplePolicy(t *testing.T) {
 
 	var out strings.Builder
 
-	err := runCLI([]string{flagHelpLong}, strings.NewReader(""), &out)
+	err := runCLI(
+		[]string{flagHelpLong},
+		strings.NewReader(""),
+		&out,
+	)
 	require.NoError(t, err,
 		"failed to print help output")
-	require.Contains(t, out.String(),
-		"Turn Go benchmark results into a winner, tie, or trade-off.",
-		"help opening sentence should match the approved Phase 27 wording")
 
-	for _, want := range sampleCountWording() {
+	require.Contains(t, out.String(),
+		AppDescription,
+		"help opening sentence should match app description")
+
+	for _, want := range sampleCountWording {
 		require.Contains(t, out.String(), want,
 			"help output should include shared sample policy wording")
 	}
@@ -177,7 +200,7 @@ func TestRunCLIVersionRequests(t *testing.T) {
 
 	var commandOut strings.Builder
 
-	err := runCLI([]string{commandVersion}, strings.NewReader("ignored"), &commandOut)
+	err := runCLI([]string{cmdVersion}, strings.NewReader("ignored"), &commandOut)
 	require.NoError(t, err,
 		"version command should succeed")
 	require.NotEmpty(t, commandOut.String(),
@@ -200,7 +223,7 @@ func TestRunCLIVersionRequests(t *testing.T) {
 func TestRunCLIVersionRejectsExtraArgs(t *testing.T) {
 	t.Parallel()
 
-	err := runCLI([]string{commandVersion, "extra"}, strings.NewReader("ignored"), &strings.Builder{})
+	err := runCLI([]string{cmdVersion, "extra"}, strings.NewReader("ignored"), &strings.Builder{})
 	require.ErrorIs(t, err, errUnexpectedCommandArgs,
 		"extra args should return 'errUnexpectedCommandArgs' error")
 }
@@ -234,7 +257,7 @@ func TestRunCLISkillMatchesCanonicalSkill(t *testing.T) {
 
 	var out strings.Builder
 
-	err = runCLI([]string{commandSkill}, strings.NewReader("ignored"), &out)
+	err = runCLI([]string{cmdSkill}, strings.NewReader("ignored"), &out)
 	require.NoError(t, err,
 		"failed to run skill command")
 	require.Equal(t, string(want), out.String(),
@@ -244,7 +267,7 @@ func TestRunCLISkillMatchesCanonicalSkill(t *testing.T) {
 func TestRunCLISkillNilOutputContainsContext(t *testing.T) {
 	t.Parallel()
 
-	err := runCLI([]string{commandSkill}, strings.NewReader("ignored"), nil)
+	err := runCLI([]string{cmdSkill}, strings.NewReader("ignored"), nil)
 	require.ErrorIs(t, err, errWritingOutput,
 		"nil output should return 'errWritingOutput' error")
 }
@@ -252,7 +275,7 @@ func TestRunCLISkillNilOutputContainsContext(t *testing.T) {
 func TestRunCLISkillRejectsExtraArgs(t *testing.T) {
 	t.Parallel()
 
-	err := runCLI([]string{commandSkill, "extra"}, strings.NewReader("ignored"), &strings.Builder{})
+	err := runCLI([]string{cmdSkill, "extra"}, strings.NewReader("ignored"), &strings.Builder{})
 	require.ErrorIs(t, err, errUnexpectedCommandArgs,
 		"extra args should return 'errUnexpectedCommandArgs' error")
 }
@@ -485,13 +508,13 @@ func TestSampleCountWordingUsesSharedPolicy(t *testing.T) {
 	t.Parallel()
 
 	err := insufficientSamplesError()
-	for _, want := range sampleCountWording() {
+	for _, want := range sampleCountWording {
 		require.ErrorContains(t, err, want,
 			"insufficient sample error should use shared wording")
 	}
 
 	help := flagHelpText()
-	for _, want := range sampleCountWording() {
+	for _, want := range sampleCountWording {
 		require.Contains(t, help, want,
 			"help text should use shared sample policy wording")
 	}
@@ -500,16 +523,9 @@ func TestSampleCountWordingUsesSharedPolicy(t *testing.T) {
 	require.NoError(t, err,
 		"failed to read README for wording check")
 
-	for _, want := range sampleCountWording() {
+	for _, want := range sampleCountWording {
 		require.Contains(t, string(readme), want,
 			"README should include shared sample policy wording")
-	}
-}
-
-func sampleCountWording() []string {
-	return []string{
-		fmt.Sprintf("at least %d samples", verdict.RawComparisonMinSamples),
-		fmt.Sprintf("-count=%d or more", verdict.RecommendedRawSamples),
 	}
 }
 
@@ -594,6 +610,24 @@ func TestRunCLIUnknownMode(t *testing.T) {
 // ----------------------------------------------------------------------------
 //  Helper functions and test data
 // ----------------------------------------------------------------------------
+
+type failingWriter struct{}
+
+func (failingWriter) Write(_ []byte) (int, error) {
+	return 0, errTestWrite
+}
+
+type failingReader struct{}
+
+func (failingReader) Read(_ []byte) (int, error) {
+	return 0, errTestWrite
+}
+
+type failingSubcmd struct{}
+
+func (failingSubcmd) Run() (string, error) {
+	return "", errTestSubcmd
+}
 
 func mustWriteFile(t *testing.T, path, data string) {
 	t.Helper()
