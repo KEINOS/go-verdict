@@ -1,17 +1,18 @@
+# Exclude AI related files
 *.md
-*.txt
-testdata/*.txt
 .claude
 .vscode
 .agent-notes/
+
+# Exclude artifacts
+*.txt
 main
 dist
+testdata/*.txt
 
+# Include specific files
 !README.md
+!README_WORKFLOWS.md
 !CONTRIBUTING.md
-!cmd/
-!cmd/verdict/
-!cmd/verdict/internal/
-!cmd/verdict/internal/skill/
 !cmd/verdict/internal/skill/SKILL.md
 !cmd/verdict/internal/skill/README.md

@@ -2,18 +2,23 @@
 
 `verdict` turns Go benchmark results into a winner, tie, or trade-off.
 
-```sh
-# Compare benchmark results before and after a change:
-# (`BenchmarkMyHeavyFunc()` + 10 iterations in this case)
-benchstat old.txt new.txt | verdict
+Compare benchmark results before and after a change:
+
+```shellsession
+% benchstat old.txt new.txt | verdict
 MyHeavyFunc-10: tie
 ```
 
-```sh
-# Compare two alternatives in raw benchmark output:
+Compare two alternatives in raw benchmark output:
+
+```shellsession
 % go test -run='^$' -bench=BenchmarkMyHeavyFunc -benchmem -count=8 ./your/package | verdict
 BenchmarkMyHeavyFunc: enhanced wins
 ```
+
+Use it when you need an objective keep-or-discard decision after trying to make Go code faster, more memory efficient, or less allocation-heavy. `verdict` keeps the decision focused on measured benchmark results.
+
+The same output can guide local development, CI checks, scripts, and automated optimization loops.
 
 It is useful when you want a clear answer after changing code:
 
@@ -27,9 +32,6 @@ It is useful when you want a clear answer after changing code:
 
 - [Features](#features)
 - [Workflows](#workflows)
-  - [Local Alternative Comparison](#local-alternative-comparison)
-  - [Named File A/B Comparison](#named-file-ab-comparison)
-  - [Before/After Comparison](#beforeafter-comparison)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
@@ -53,145 +55,34 @@ It is useful when you want a clear answer after changing code:
 - Uses both statistical significance and a practical delta threshold.
 - Handles lower-is-better metrics such as `sec/op`, `ns/op`, `B/op`, and `allocs/op`.
 - Handles higher-is-better metrics such as `MB/s`, `ops/s`, and other `/s` rates.
+- Flags mixed results as `trade-off` when one metric improves while another regresses.
 - Returns stable outcomes for CI and scripts.
 
 ## Workflows
 
-`verdict` is designed around three common workflows.
+`verdict` is designed around three common comparison workflows: Alternative, Named File, and Before/After.
 
-### Local Alternative Comparison
+Each workflow produces a concise benchmark decision that can be used by humans, scripts, CI, or automated optimization.
 
-Use this workflow for a **quick local test before actually changing code**.
-Use it when the original and alternative implementations are sub-benchmarks in the same test file.
-
-Example benchmark:
-
-```go
-func BenchmarkMyHeavyFunc(b *testing.B) {
-    b.Run("original", func(b *testing.B) {
-        for b.Loop() {
-            ExampleOriginal()
-        }
-    })
-
-    b.Run("enhanced", func(b *testing.B) {
-        for b.Loop() {
-            ExampleEnhanced()
-        }
-    })
-}
-```
-
-Collect repeated benchmark samples:
+Alternative compares sub-benchmarks in one raw `go test -bench` stream:
 
 ```sh
-go test -run='^$' -bench='BenchmarkMyHeavyFunc' -benchmem -count=20 ./your/package > alternatives.txt
+go test -run='^$' -bench='BenchmarkMyHeavyFunc' -benchmem -count=20 ./your/package | verdict
 ```
 
-Then compare the two sub-benchmarks:
+Named File compares two raw benchmark files that do the same job but use different benchmark names:
 
 ```sh
-verdict < alternatives.txt
-```
-
-Auto mode first checks whether both `original` and `enhanced` exist under the same parent benchmark. If both exist, it compares that pair.
-
-Otherwise, auto mode compares one pair only when the parent benchmark has exactly two sub-benchmark labels.
-
-Use explicit labels when the [raw benchmark output](https://go.googlesource.com/proposal/+/master/design/14313-benchmark-format.md) has more than two alternatives or non-default names:
-
-```sh
-verdict --mode alternatives --baseline original --candidate enhanced < alternatives.txt
-```
-
-The outcome meaning is from the new option side:
-
-| Outcome | Meaning in alternative mode |
-| --- | --- |
-| `new-wins` | The candidate is better than the baseline. |
-| `old-wins` | The baseline is better than the candidate. |
-| `tie` | There is no statistically significant practical difference. |
-| `trade-off` | Some metrics improved, but other metrics regressed. |
-| `inconclusive` | The input does not contain enough comparable samples. |
-
-Raw benchmark comparison supports `ns/op`, `B/op`, and `allocs/op` from `go test` output. It computes deltas and approximate `p`-values from repeated samples, then applies the same `--alpha`, `--min-delta`, and verdict rules as before/after comparison. It needs at least 3 samples per benchmark side; with fewer samples, the library report is `inconclusive` and the CLI prints an actionable error.
-
-Run with enough samples. `-count=8` is accepted for quick local checks, but `-count=10` or more is recommended for stable results. If you use only `-count=2`, `verdict` asks you to run more samples:
-
-```text
-error: insufficient samples: need at least 3 samples per benchmark side; recommend -count=10 or more for stable results
-```
-
-The raw-sample `p`-value is a pragmatic normal approximation from the two sample means and variances. Very small accepted sample counts, such as 3 to 5 per side, can be useful for quick feedback but are weaker evidence than the recommended `-count=10` or more. Benchmark distributions can be noisy or non-normal, so treat close results as guidance to collect more samples.
-
-### Named File A/B Comparison
-
-Use this workflow when **two benchmark functions have different names**, but they do the same job.
-
-Each file should contain one benchmark series, collected with repeated samples:
-
-```sh
-go test -run='^$' -bench=BenchmarkMyHeavyFuncFast -count=10 ./your/package > fast.txt
-go test -run='^$' -bench=BenchmarkMyHeavyFuncSlow -count=10 ./your/package > slow.txt
 verdict -a fast.txt -b slow.txt
 ```
 
-If `fast.txt` contains `BenchmarkMyHeavyFuncFast` and `slow.txt` contains `BenchmarkMyHeavyFuncSlow`, the benchmark names are different. `benchstat` compares the same benchmark name before and after a change, so `verdict` errors.
-
-For example, this is not a valid before/after `benchstat` comparison:
-
-```shellsession
-$ benchstat fast.txt slow.txt | verdict
-error: inconclusive: benchmark names differ
-benchstat compares the same benchmark before and after a change.
-To compare two different benchmark functions as A/B alternatives, pass the raw benchmark files:
-  verdict -a fast.txt -b slow.txt
-```
-
-In that case, use `-a` and `-b` to say: "compare these two raw benchmark files as A/B alternatives."
-
-```shellsession
-$ verdict -a fast.txt -b slow.txt
-BenchmarkMyHeavyFuncFast_vs_BenchmarkMyHeavyFuncSlow: BenchmarkMyHeavyFuncFast wins
-```
-
-### Before/After Comparison
-
-Use this workflow when you compare benchmark results from **two different code states**, such as before and after edits.
-
-Collect old benchmark results:
-
-```sh
-go test -run='^$' -bench=. -benchmem -count=20 > old.txt
-```
-
-Change your code or checkout a target branch, then collect new benchmark results:
-
-```sh
-go test -run='^$' -bench=. -benchmem -count=20 > new.txt
-```
-
-Compare them with `benchstat`, then pipe the result to `verdict`:
+Before/After compares old and new benchmark results through `benchstat`:
 
 ```sh
 benchstat old.txt new.txt | verdict
 ```
 
-If one side wins, `verdict` uses the file labels from the `benchstat` header:
-
-```text
-ExampleFast-10: new.txt wins
-```
-
-> [!INFO]
-> `verdict` parses the [Go benchmark format](https://go.googlesource.com/proposal/+/master/design/14313-benchmark-format.md) and `benchstat` output. Therefore, you can use it with any tool that produces compatible output.
-> For example, you can also compare the speed of the Go compiler using [compilebench](https://pkg.go.dev/golang.org/x/tools/cmd/compilebench) and [toolstash](https://pkg.go.dev/golang.org/x/tools/cmd/toolstash).
->
-> ```sh
-> compilebench -count 10 -compile $(toolstash -n compile) >old.txt
-> compilebench -count 10 >new.txt
-> benchstat old.txt new.txt | verdict
-> ```
+See [Workflow Details](README_WORKFLOWS.md) for examples, auto-detection rules, raw-sample requirements, and mismatch handling.
 
 ## Requirements
 
@@ -283,50 +174,45 @@ Example JSON:
 
 ## CLI Options
 
-```text
-Usage: verdict [command] [options]
+```shellsession
+% verdict --help
+Turn Go benchmark results into a winner, tie, or trade-off.
 
-Raw benchmark comparisons need at least 3 samples per benchmark side.
-For stable results, run benchmarks with -count=10 or more.
+Usage:
+  verdict [command] [options]
+
+Note:
+  Raw benchmark comparisons need at least 3 samples per benchmark side.
+  For stable results, run benchmarks with -count=10 or more.
 
 Commands:
   skill
       Print the AI Agent skill text.
-
   version
       Print the command version.
 
 Options:
   --format text|json
       Output format. Default: text.
-
   -v, --version
       Print the command version.
-
   --mode auto|benchstat|alternatives
       Input mode. Default: auto.
       auto: detect benchstat output or raw go test -bench output.
       benchstat: read already-compared benchstat text or CSV.
       alternatives: compare raw sub-benchmarks, such as original vs enhanced.
-
   --verbose
       Include verdict reason and metric details in text output.
-
   -a file
       Raw benchmark file for side A.
-
   -b file
       Raw benchmark file for side B.
-
   --baseline name
       Baseline sub-benchmark name for alternatives mode.
-
   --candidate name
       Candidate sub-benchmark name for alternatives mode.
-
   --alpha value
       P-value threshold for statistical significance. Must be greater than 0 and at most 1. Default: 0.05.
-
   --min-delta value
       Minimum absolute delta percentage to treat as a practical difference. Must be non-negative. Default: 0.0.
 ```
@@ -343,8 +229,7 @@ For raw benchmark input, p-values are approximate and become more trustworthy as
 
 ## Verdicts
 
-`go-verdict` uses Pareto-style rules for each benchmark. In this README,
-Pareto-superior means better in one or more metrics and not worse in any metric.
+`verdict` uses Pareto-style rules for each benchmark. In this README, Pareto-superior means better in one or more metrics and not worse in any metric.
 
 | Outcome | Meaning |
 | --- | --- |
@@ -364,9 +249,7 @@ Each metric is classified as:
 
 ## Inconclusive Results
 
-Some inputs cannot produce a reliable verdict. Library reports use
-`inconclusive` for these cases. The CLI also turns selected cases, such as
-benchmark-set mismatch and insufficient raw samples, into actionable errors.
+Some inputs cannot produce a reliable verdict. Library reports use `inconclusive` for these cases. The CLI also turns selected cases, such as benchmark-set mismatch and insufficient raw samples, into actionable errors.
 
 Known reason codes include:
 
@@ -390,23 +273,23 @@ You can also use the parser and evaluator from Go code:
 package main
 
 import (
- "os"
+  "os"
 
- "github.com/KEINOS/go-verdict/verdict"
+  "github.com/KEINOS/go-verdict/verdict"
 )
 
 func main() {
- report, err := verdict.Parse(os.Stdin, verdict.Options{
-  Alpha:       0.05,
-  MinDeltaPct: 0,
- })
- if err != nil {
-  panic(err)
- }
+  report, err := verdict.Parse(os.Stdin, verdict.Options{
+    Alpha:       0.05,
+    MinDeltaPct: 0,
+  })
+  if err != nil {
+    panic(err)
+  }
 
- if err := report.WriteJSON(os.Stdout); err != nil {
-  panic(err)
- }
+  if err := report.WriteJSON(os.Stdout); err != nil {
+    panic(err)
+  }
 }
 ```
 
@@ -416,12 +299,12 @@ Parse raw alternatives from stdin by selecting explicit sub-benchmark labels:
 
 ```go
 report, err := verdict.Parse(os.Stdin, verdict.Options{
- Mode:      "alternatives",
- Baseline:  "original",
- Candidate: "enhanced",
+  Mode:      "alternatives",
+  Baseline:  "original",
+  Candidate: "enhanced",
 })
 if err != nil {
- panic(err)
+  panic(err)
 }
 _ = report.WriteText(os.Stdout)
 ```
@@ -431,19 +314,19 @@ Compare two raw benchmark files as A/B alternatives:
 ```go
 a, err := os.Open("fast.txt")
 if err != nil {
- panic(err)
+  panic(err)
 }
 defer a.Close()
 
 b, err := os.Open("slow.txt")
 if err != nil {
- panic(err)
+  panic(err)
 }
 defer b.Close()
 
 report, err := verdict.CompareRawFiles(a, b, verdict.NewOptions())
 if err != nil {
- panic(err)
+  panic(err)
 }
 _ = report.WriteJSON(os.Stdout)
 ```
@@ -453,19 +336,21 @@ Use report outcomes directly in CI checks:
 ```go
 report, err := verdict.Parse(os.Stdin, verdict.NewOptions())
 if err != nil {
- panic(err)
+  panic(err)
 }
 
 for _, item := range report.Verdicts {
- if item.Outcome == verdict.OldWins || item.Outcome == verdict.TradeOff {
-  os.Exit(1)
- }
+  if item.Outcome == verdict.OldWins || item.Outcome == verdict.TradeOff {
+    os.Exit(1)
+  }
 }
 ```
 
 ## AI Agent Skill
 
-To give an AI agent guidance for using `verdict`:
+`verdict skill` prints guidance for agents that use `verdict` as an objective benchmark gate in Go optimization loops. This is optional; the core command is the same developer-facing benchmark decision tool.
+
+To export the guidance:
 
 ```sh
 verdict skill > SKILL.md
