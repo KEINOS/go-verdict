@@ -935,6 +935,104 @@ func TestCompareRawFilesInconclusiveCases(t *testing.T) {
 	}
 }
 
+func TestRawInconclusiveReasonCodeContracts(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range rawInconclusiveReasonCodeContractCases() {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			report := test.run(t)
+
+			require.Len(t, report.Verdicts, 1, "unexpected verdict count")
+			require.Equal(t, Inconclusive, report.Verdicts[0].Outcome, "unexpected outcome")
+			require.Equal(t, test.reason, report.Verdicts[0].ReasonCode, "unexpected reason code")
+		})
+	}
+}
+
+type rawReasonCodeContractCase struct {
+	name   string
+	reason string
+	run    func(t *testing.T) Report
+}
+
+func rawInconclusiveReasonCodeContractCases() []rawReasonCodeContractCase {
+	return []rawReasonCodeContractCase{
+		rawParseReasonCodeCase(
+			"malformed benchmark",
+			reasonMalformedBenchmark,
+			"BenchmarkEnhance/original-10 nope 8 ns/op\n",
+			Options{Mode: altMode},
+		),
+		rawParseReasonCodeCase(
+			"unsupported metric",
+			reasonUnsupported,
+			"BenchmarkEnhance/original-10 100 8 MB/s\n",
+			Options{Mode: altMode},
+		),
+		rawParseReasonCodeCase(
+			"insufficient samples",
+			reasonInsufficient,
+			"BenchmarkEnhance/original-10 100 8 ns/op\nBenchmarkEnhance/enhanced-10 100 7 ns/op\n",
+			Options{Mode: altMode},
+		),
+		rawParseReasonCodeCase(
+			"ambiguous alternatives",
+			"ambiguous-alternatives",
+			"BenchmarkEnhance/a-10 100 10 ns/op\nBenchmarkEnhance/b-10 100 8 ns/op\nBenchmarkEnhance/c-10 100 8 ns/op\n",
+			Options{},
+		),
+		rawParseReasonCodeCase(
+			"missing baseline",
+			"missing-baseline",
+			"BenchmarkEnhance/enhanced-10 100 8 ns/op\n",
+			Options{Mode: altMode},
+		),
+		rawParseReasonCodeCase(
+			"missing candidate",
+			"missing-candidate",
+			"BenchmarkEnhance/original-10 100 8 ns/op\n",
+			Options{Mode: altMode},
+		),
+		rawFileReasonCodeCase("ambiguous benchmark", "ambiguous-benchmark"),
+	}
+}
+
+func rawParseReasonCodeCase(name string, reason string, input string, opts Options) rawReasonCodeContractCase {
+	return rawReasonCodeContractCase{
+		name:   name,
+		reason: reason,
+		run: func(t *testing.T) Report {
+			t.Helper()
+
+			report, err := Parse(strings.NewReader(input), opts)
+			require.NoError(t, err)
+
+			return report
+		},
+	}
+}
+
+func rawFileReasonCodeCase(name string, reason string) rawReasonCodeContractCase {
+	return rawReasonCodeContractCase{
+		name:   name,
+		reason: reason,
+		run: func(t *testing.T) Report {
+			t.Helper()
+
+			report, err := CompareRawFiles(
+				strings.NewReader("BenchmarkExampleFast-10 100 1 ns/op\nBenchmarkOther-10 100 1 ns/op\n"),
+				strings.NewReader("BenchmarkExampleSlow-10 100 10 ns/op\n"),
+				Options{},
+			)
+			require.NoError(t, err)
+
+			return report
+		},
+	}
+}
+
 func TestCompareRawFilesSampleBoundaries(t *testing.T) {
 	t.Parallel()
 
@@ -1061,6 +1159,26 @@ func TestPrivateRawFileBenchmarkLineBranches(t *testing.T) {
 	} {
 		_, _, ok := parseRawFileBenchmarkLine(line)
 		require.False(t, ok, "line '%q' should not parse", line)
+	}
+}
+
+func TestPrivateRawDecodedLineBranches(t *testing.T) {
+	t.Parallel()
+
+	decoded, ok := decodeRawBenchmarkLine("BenchmarkFoo/original-10 100 10 ns/op 1 MB/s")
+	require.True(t, ok, "valid raw benchmark line should decode")
+	require.Equal(t, "BenchmarkFoo/original-10", decoded.name, "unexpected benchmark name")
+	require.Equal(t, map[string]float64{metricSecPerOp: 10}, decoded.metrics,
+		"unsupported metrics should be ignored during decoding")
+
+	for _, line := range []string{
+		"BenchmarkFoo/original-10",
+		"BenchmarkFoo/original-10 nope 10 ns/op",
+		"BenchmarkFoo/original-10 100 10",
+		"BenchmarkFoo/original-10 100 bad ns/op",
+	} {
+		_, ok := decodeRawBenchmarkLine(line)
+		require.False(t, ok, "line %q should not decode", line)
 	}
 }
 
@@ -1363,6 +1481,37 @@ BenchmarkA/original-10 100 10 ns/op
 		"expected BenchmarkA to be sorted before BenchmarkZ")
 	require.Equal(t, "BenchmarkZ", report.Verdicts[1].Benchmark,
 		"expected BenchmarkZ to be sorted after BenchmarkA")
+}
+
+func TestSortedAlternativeParentsOrdersMapKeys(t *testing.T) {
+	t.Parallel()
+
+	samples := alternativeSampleSet{
+		"BenchmarkZ": {},
+		"BenchmarkA": {},
+		"BenchmarkM": {},
+	}
+
+	require.Equal(t, []string{"BenchmarkA", "BenchmarkM", "BenchmarkZ"}, sortedAlternativeParents(samples),
+		"alternative parents should sort map keys deterministically")
+}
+
+func TestCommonMetricsOrdersMapKeys(t *testing.T) {
+	t.Parallel()
+
+	left := map[string][]float64{
+		metricBytesPerOp:  {1},
+		metricSecPerOp:    {1},
+		metricAllocsPerOp: {1},
+	}
+	right := map[string][]float64{
+		metricSecPerOp:    {1},
+		metricAllocsPerOp: {1},
+		metricBytesPerOp:  {1},
+	}
+
+	require.Equal(t, []string{metricBytesPerOp, metricAllocsPerOp, metricSecPerOp}, commonMetrics(left, right),
+		"common metrics should sort map keys deterministically")
 }
 
 func TestParseAlternativesModeVariableSamplesUsePValueApproximation(t *testing.T) {
