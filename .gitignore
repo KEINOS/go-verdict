@@ -2,6 +2,7 @@
 *.md
 .claude
 .vscode
+.antigravitycli
 .agent-notes/
 
 # Exclude artifacts
