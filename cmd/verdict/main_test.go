@@ -13,15 +13,16 @@ import (
 )
 
 const (
-	flagFormat   = "--format"
-	flagAlpha    = "--alpha"
-	flagMinDelta = "--min-delta"
-	flagMode     = "--mode"
-	formatText   = "text"
-	formatJSON   = "json"
-	modeAlt      = "alternatives"
-	optionAlpha  = "alpha"
-	winningInput = "name          old time/op  new time/op  delta\n" +
+	flagFormat     = "--format"
+	flagAlpha      = "--alpha"
+	flagMinDelta   = "--min-delta"
+	flagMode       = "--mode"
+	formatText     = "text"
+	formatJSON     = "json"
+	modeAlt        = "alternatives"
+	optionAlpha    = "alpha"
+	optionMinDelta = "min-delta"
+	winningInput   = "name          old time/op  new time/op  delta\n" +
 		"Foo-8         10.0ns ± 1%   8.0ns ± 1%  -20.00% (p=0.001 n=10+10)\n"
 	alternativesInput = "BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
 		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n" +
@@ -314,9 +315,9 @@ func TestRunCLIRejectsInvalidStatisticalOptions(t *testing.T) {
 		{name: "NaN alpha", args: []string{flagAlpha, "NaN"}, want: optionAlpha},
 		{name: "Inf alpha", args: []string{flagAlpha, "Inf"}, want: optionAlpha},
 		{name: "negative Inf alpha", args: []string{flagAlpha, "-Inf"}, want: optionAlpha},
-		{name: "negative min delta", args: []string{flagMinDelta, "-1"}, want: "min-delta"},
-		{name: "NaN min delta", args: []string{flagMinDelta, "NaN"}, want: "min-delta"},
-		{name: "Inf min delta", args: []string{flagMinDelta, "Inf"}, want: "min-delta"},
+		{name: "negative min delta", args: []string{flagMinDelta, "-1"}, want: optionMinDelta},
+		{name: "NaN min delta", args: []string{flagMinDelta, "NaN"}, want: optionMinDelta},
+		{name: "Inf min delta", args: []string{flagMinDelta, "Inf"}, want: optionMinDelta},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
