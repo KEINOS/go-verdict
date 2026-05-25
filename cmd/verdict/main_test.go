@@ -311,7 +311,12 @@ func TestRunCLIRejectsInvalidStatisticalOptions(t *testing.T) {
 		{name: "zero alpha", args: []string{flagAlpha, "0"}, want: optionAlpha},
 		{name: "negative alpha", args: []string{flagAlpha, "-0.1"}, want: optionAlpha},
 		{name: "alpha above one", args: []string{flagAlpha, "1.1"}, want: optionAlpha},
+		{name: "NaN alpha", args: []string{flagAlpha, "NaN"}, want: optionAlpha},
+		{name: "Inf alpha", args: []string{flagAlpha, "Inf"}, want: optionAlpha},
+		{name: "negative Inf alpha", args: []string{flagAlpha, "-Inf"}, want: optionAlpha},
 		{name: "negative min delta", args: []string{flagMinDelta, "-1"}, want: "min-delta"},
+		{name: "NaN min delta", args: []string{flagMinDelta, "NaN"}, want: "min-delta"},
+		{name: "Inf min delta", args: []string{flagMinDelta, "Inf"}, want: "min-delta"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
