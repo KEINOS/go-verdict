@@ -27,6 +27,26 @@ var (
 	errWritingOutput         = errors.New("writing output")
 )
 
+type reasonCodeErrorHandler struct {
+	reasonCode string
+	handle     func(verdict.BenchmarkVerdict) error
+}
+
+func reasonCodeErrorHandlers() []reasonCodeErrorHandler {
+	return []reasonCodeErrorHandler{
+		{
+			reasonCode: "benchmark-set-mismatch",
+			handle:     benchmarkSetMismatchError,
+		},
+		{
+			reasonCode: "insufficient-samples",
+			handle: func(verdict.BenchmarkVerdict) error {
+				return insufficientSamplesError()
+			},
+		},
+	}
+}
+
 func buildReport(input io.Reader, opts *verdict.Options, cliOpts cliOptions) (verdict.Report, error) {
 	if cliOpts.aPath != "" || cliOpts.bPath != "" {
 		return buildRawFileReport(opts, cliOpts)
@@ -75,14 +95,13 @@ func reportError(report verdict.Report) error {
 		return nil
 	}
 
-	switch report.Verdicts[0].ReasonCode {
-	case "benchmark-set-mismatch":
-		return benchmarkSetMismatchError(report.Verdicts[0])
-	case "insufficient-samples":
-		return insufficientSamplesError()
-	default:
-		return nil
+	for _, handler := range reasonCodeErrorHandlers() {
+		if handler.reasonCode == report.Verdicts[0].ReasonCode {
+			return handler.handle(report.Verdicts[0])
+		}
 	}
+
+	return nil
 }
 
 func benchmarkSetMismatchError(item verdict.BenchmarkVerdict) error {

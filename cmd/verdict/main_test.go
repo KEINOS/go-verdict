@@ -500,12 +500,38 @@ func TestReportErrorBranches(t *testing.T) {
 	require.NoError(t, reportError(verdictReport("other")),
 		"non-mapped reason code should not return error")
 
-	err := reportError(verdictReport("insufficient-samples"))
-	require.ErrorIs(t, err, errInsufficientSamples,
-		"insufficient-samples reason should map to CLI error")
+	tests := map[string]error{
+		"benchmark-set-mismatch": errBenchmarkSetMismatch,
+		"insufficient-samples":   errInsufficientSamples,
+	}
+
+	for _, handler := range reasonCodeErrorHandlers() {
+		wantErr, ok := tests[handler.reasonCode]
+		require.True(t, ok,
+			"mapped reason code should have an explicit CLI expectation")
+
+		test := struct {
+			reasonCode string
+			wantErr    error
+		}{
+			reasonCode: handler.reasonCode,
+			wantErr:    wantErr,
+		}
+
+		t.Run(test.reasonCode, func(t *testing.T) {
+			t.Parallel()
+
+			err := reportError(verdictReport(test.reasonCode))
+			require.ErrorIs(t, err, test.wantErr,
+				"reason code should map to expected CLI error")
+		})
+	}
+
+	require.Len(t, tests, len(reasonCodeErrorHandlers()),
+		"all expected CLI reason codes should have handlers")
 
 	//nolint:exhaustruct // Zero-value BenchmarkVerdict checks fallback labels.
-	err = benchmarkSetMismatchError(verdict.BenchmarkVerdict{})
+	err := benchmarkSetMismatchError(verdict.BenchmarkVerdict{})
 	require.ErrorContains(t, err, "verdict -a ./a.txt -b ./b.txt",
 		"fallback labels should be used in mismatch guidance")
 }
