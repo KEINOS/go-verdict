@@ -33,6 +33,14 @@ func displayLabel(label string) string {
 	return base
 }
 
+func displayLabelWithFallback(label, fallback string) string {
+	if label != "" {
+		return displayLabel(label)
+	}
+
+	return fallback
+}
+
 func inconclusiveReport(reason string) Report {
 	return labeledInconclusiveReport(reason, "", "")
 }

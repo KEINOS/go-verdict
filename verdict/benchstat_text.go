@@ -130,19 +130,11 @@ func parseBenchstatTextLabels(line string) ([2]string, bool) {
 }
 
 func (state *textParseState) displayBaselineLabel() string {
-	if state.baselineLabel != "" {
-		return displayLabel(state.baselineLabel)
-	}
-
-	return fallbackBaselineLabel
+	return displayLabelWithFallback(state.baselineLabel, fallbackBaselineLabel)
 }
 
 func (state *textParseState) displayCandidateLabel() string {
-	if state.candidateLabel != "" {
-		return displayLabel(state.candidateLabel)
-	}
-
-	return fallbackCandidateLabel
+	return displayLabelWithFallback(state.candidateLabel, fallbackCandidateLabel)
 }
 
 func (state *textParseState) inconclusiveReport(reason string) Report {

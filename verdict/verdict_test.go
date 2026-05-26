@@ -1655,6 +1655,38 @@ func TestPrivateDisplayLabelBranches(t *testing.T) {
 		"unknown outcome winner should be empty")
 }
 
+func TestPrivateDisplayLabelWithFallbackBranches(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		label    string
+		fallback string
+		want     string
+	}{
+		{
+			name:     "empty label uses fallback",
+			label:    "",
+			fallback: labelOld,
+			want:     labelOld,
+		},
+		{
+			name:     "label is displayed when set",
+			label:    "path/to/new.txt",
+			fallback: labelOld,
+			want:     labelNewTxt,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tt.want, displayLabelWithFallback(tt.label, tt.fallback))
+		})
+	}
+}
+
 func TestWriteVerboseTextHeaderErrorContainsContext(t *testing.T) {
 	t.Parallel()
 

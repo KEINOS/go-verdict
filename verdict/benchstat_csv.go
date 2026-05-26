@@ -184,19 +184,11 @@ func (state *csvParseState) parseComparison(fields []string, opts Options) (Comp
 }
 
 func (state *csvParseState) displayBaselineLabel() string {
-	if state.baselineLabel != "" {
-		return displayLabel(state.baselineLabel)
-	}
-
-	return fallbackBaselineLabel
+	return displayLabelWithFallback(state.baselineLabel, fallbackBaselineLabel)
 }
 
 func (state *csvParseState) displayCandidateLabel() string {
-	if state.candidateLabel != "" {
-		return displayLabel(state.candidateLabel)
-	}
-
-	return fallbackCandidateLabel
+	return displayLabelWithFallback(state.candidateLabel, fallbackCandidateLabel)
 }
 
 func (state *csvParseState) rawBaselineLabel() string {
