@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/KEINOS/go-verdict/verdict/internal/pareto"
 	"github.com/stretchr/testify/require"
 )
 
@@ -691,11 +692,28 @@ func TestPrivateEdgeBranches(t *testing.T) {
 func TestDecideNoMetricsIsInconclusive(t *testing.T) {
 	t.Parallel()
 
-	outcome, reason := decide(0, 0, 0)
+	outcome, reason := decide(pareto.Inconclusive)
 	require.Equal(t, Inconclusive, outcome,
 		"expected inconclusive outcome when no metrics are present")
 	require.NotEmpty(t, reason,
 		"expected reason to be non-empty when no metrics are present")
+}
+
+func TestMetricRelationUnknownDirectionIsSame(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, pareto.Same, metricRelation(Direction("unknown")),
+		"unknown public direction should not count as an improvement or regression")
+}
+
+func TestDecideUnknownRelationIsInconclusive(t *testing.T) {
+	t.Parallel()
+
+	outcome, reason := decide(pareto.Relation("unknown"))
+	require.Equal(t, Inconclusive, outcome,
+		"unknown internal relation should produce an inconclusive public outcome")
+	require.NotEmpty(t, reason,
+		"expected reason to be non-empty when internal relation is unknown")
 }
 
 func TestWriteTextMetricErrorContainsContext(t *testing.T) {

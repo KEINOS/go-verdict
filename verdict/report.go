@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/KEINOS/go-verdict/verdict/internal/pareto"
 )
 
 const (
@@ -117,20 +119,7 @@ func evaluate(rows []Comparison) Report {
 			return metrics[i].Metric < metrics[j].Metric
 		})
 
-		improved, worsened := 0, 0
-
-		for _, metric := range metrics {
-			switch metric.Direction {
-			case Improved:
-				improved++
-			case Worsened:
-				worsened++
-			case Same:
-				continue
-			}
-		}
-
-		outcome, reason := decide(improved, worsened, len(metrics))
+		outcome, reason := decide(pareto.Compare(metricRelations(metrics)...))
 		baselineLabel, candidateLabel := comparisonLabels(metrics)
 
 		verdicts = append(verdicts, BenchmarkVerdict{
@@ -146,6 +135,29 @@ func evaluate(rows []Comparison) Report {
 	}
 
 	return Report{Verdicts: verdicts}
+}
+
+func metricRelations(metrics []Comparison) []pareto.Metric {
+	relations := make([]pareto.Metric, 0, len(metrics))
+
+	for _, metric := range metrics {
+		relations = append(relations, metricRelation(metric.Direction))
+	}
+
+	return relations
+}
+
+func metricRelation(direction Direction) pareto.Metric {
+	switch direction {
+	case Improved:
+		return pareto.Better
+	case Worsened:
+		return pareto.Worse
+	case Same:
+		return pareto.Same
+	default:
+		return pareto.Same
+	}
 }
 
 func comparisonLabels(metrics []Comparison) (string, string) {
@@ -180,18 +192,20 @@ func winnerLabel(outcome Outcome, baselineLabel, candidateLabel string) string {
 	}
 }
 
-func decide(improved, worsened, total int) (Outcome, string) {
-	switch {
-	case total == 0:
+func decide(relation pareto.Relation) (Outcome, string) {
+	switch relation {
+	case pareto.Inconclusive:
 		return Inconclusive, "no comparable metrics"
-	case improved > 0 && worsened == 0:
+	case pareto.CandidateWins:
 		return NewWins, "new is Pareto-superior: better in one or more metrics and not worse in any metric"
-	case worsened > 0 && improved == 0:
+	case pareto.BaselineWins:
 		return OldWins, "old is Pareto-superior: new is worse in one or more metrics and not better in any metric"
-	case improved == 0 && worsened == 0:
+	case pareto.Tie:
 		return Tie, "no statistically significant practical difference"
-	default:
+	case pareto.TradeOff:
 		return TradeOff, "significant improvements and regressions coexist"
+	default:
+		return Inconclusive, "no comparable metrics"
 	}
 }
 
