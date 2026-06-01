@@ -84,19 +84,6 @@ func lowerIsBetter(metric string) bool {
 		metric != "rate"
 }
 
-func normalizeMetric(metric string) string {
-	metric = strings.TrimSpace(metric)
-
-	switch strings.ToLower(metric) {
-	case "time/op", "ns/op":
-		return metricSecPerOp
-	case "bytes/op", "b/op":
-		return metricBytesPerOp
-	default:
-		return metric
-	}
-}
-
 func evaluate(rows []Comparison) Report {
 	grouped := map[string][]Comparison{}
 

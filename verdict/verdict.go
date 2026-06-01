@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"strings"
+
+	"github.com/KEINOS/go-verdict/verdict/internal/benchparser"
+	"github.com/KEINOS/go-verdict/verdict/internal/benchparser/benchstat"
+	"github.com/KEINOS/go-verdict/verdict/internal/benchparser/rawbench"
 )
 
 // Direction describes whether one metric improved, worsened, or stayed effectively the same.
@@ -119,7 +122,7 @@ const (
 var (
 	errReadingInput     = errors.New("reading benchstat input")
 	errInvalidOptions   = errors.New("invalid options")
-	errNoComparisonRows = errors.New("no benchstat comparison rows found")
+	errNoComparisonRows = benchstat.ErrNoComparisonRows
 )
 
 // Parse reads benchstat output or raw Go benchmark output and returns a
@@ -145,7 +148,7 @@ func Parse(reader io.Reader, opts Options) (Report, error) {
 	case modeBenchstat:
 		return parseBenchstat(text, opts)
 	default:
-		if looksLikeRawBenchmarkInput(text) {
+		if rawbench.LooksLikeAlternatives(text) {
 			return parseAlternatives(text, opts)
 		}
 
@@ -166,11 +169,55 @@ func CompareRawFiles(aReader io.Reader, bReader io.Reader, opts Options) (Report
 }
 
 func parseBenchstat(text string, opts Options) (Report, error) {
-	if strings.Contains(text, ",vs base,P") {
-		return parseCSV(text, opts)
+	result, err := benchstat.Parse(text)
+	if err != nil {
+		return Report{}, fmt.Errorf("parsing benchstat input: %w", err)
 	}
 
-	return parseText(text, opts)
+	if result.InconclusiveReason != "" {
+		if result.IncludeLabels {
+			return labeledInconclusiveReport(
+				result.InconclusiveReason,
+				labelWithFallback(result.BaselineLabel, fallbackBaselineLabel),
+				labelWithFallback(result.CandidateLabel, fallbackCandidateLabel),
+			), nil
+		}
+
+		return inconclusiveReport(result.InconclusiveReason), nil
+	}
+
+	return evaluate(benchstatComparisons(result.Comparisons, opts)), nil
+}
+
+func labelWithFallback(label, fallback string) string {
+	if label != "" {
+		return label
+	}
+
+	return fallback
+}
+
+func benchstatComparisons(rows []benchparser.Comparison, opts Options) []Comparison {
+	comparisons := make([]Comparison, 0, len(rows))
+
+	for _, row := range rows {
+		significant := row.PValue <= opts.Alpha &&
+			math.Abs(row.DeltaPct) >= opts.MinDeltaPct &&
+			!row.ApproxEqual
+
+		comparisons = append(comparisons, Comparison{
+			Benchmark:      row.Benchmark,
+			Metric:         row.Metric,
+			DeltaPct:       row.DeltaPct,
+			PValue:         row.PValue,
+			Significant:    significant,
+			Direction:      classify(row.Metric, row.DeltaPct, significant),
+			BaselineLabel:  displayLabelWithFallback(row.BaselineLabel, fallbackBaselineLabel),
+			CandidateLabel: displayLabelWithFallback(row.CandidateLabel, fallbackCandidateLabel),
+		})
+	}
+
+	return comparisons
 }
 
 // NewOptions returns default options for callers that prefer explicit setup.

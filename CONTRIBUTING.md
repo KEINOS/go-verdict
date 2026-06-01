@@ -114,13 +114,13 @@ make clean-all       # remove both generated fixture files and ./dist
 evaluation and output writers:
 
 1. Benchstat stdin: `verdict.Parse` reads `benchstat` text or CSV output,
-   parsed by `benchstat_text.go` or `benchstat_csv.go`.
+   parsed by `verdict/internal/benchparser/benchstat/benchstat.go`.
 2. Raw alternatives stdin: auto mode recognizes repeated `go test -bench`
    rows such as `BenchmarkName/original` and `BenchmarkName/enhanced`, parsed
-   by `raw.go`.
+   by `verdict/internal/benchparser/rawbench/rawbench.go`.
 3. Raw-file A/B comparison: the CLI `-a` and `-b` flags call
-   `verdict.CompareRawFiles`, also implemented in `raw.go`, for two separate
-   raw benchmark files.
+   `verdict.CompareRawFiles`, with raw input parsed by
+   `verdict/internal/benchparser/rawbench/rawbench.go`, for two separate raw benchmark files.
 
 All paths produce `Comparison` rows and then use the shared evaluator in the
 `verdict` package to produce a `Report`. Text, verbose text, and JSON output
@@ -134,7 +134,8 @@ The embedded AI Agent skill text lives in `cmd/verdict/internal/skill/`.
 ```text
 cmd/verdict/                 CLI entry point
 cmd/verdict/internal/skill/  Embedded AI Agent skill text
-verdict/                     Parser, evaluator, and output writer
+verdict/                     Public facade, evaluator, and output writer
+verdict/internal/benchparser/  Neutral benchmark input decoders
 testdata/                    Demo benchmarks and generated fixture files
 Makefile                     Fixture and end-to-end commands
 ```
@@ -161,10 +162,8 @@ Use this checklist when extending what `verdict` can read or write:
 
 - Decide whether the new format is benchstat-like, raw-benchmark-like, or a
   separate parser path.
-- Add parser code in the `verdict` package without changing existing mode
-  behavior unless the new format is intentionally part of auto detection.
-- Convert parsed data into `Comparison` rows so shared verdict evaluation still
-  owns `Direction`, `Outcome`, `Reason`, and winner selection.
+- Add neutral decoder code under `verdict/internal/benchparser` without changing existing mode behavior unless the new format is intentionally part of auto detection.
+- Convert decoded data into `Comparison` rows in the `verdict` package so shared verdict evaluation still owns thresholds, statistics, `Direction`, `Outcome`, `Reason`, and winner selection.
 - Update CLI mode or format validation in `cmd/verdict/` if users need a new
   flag value.
 - Add unit tests for parser success, malformed input, unsupported metrics, and

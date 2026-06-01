@@ -1,20 +1,25 @@
 package verdict
 
 import (
+	"fmt"
 	"io"
 	"math"
 	"sort"
+
+	"github.com/KEINOS/go-verdict/verdict/internal/benchparser/rawbench"
 )
 
+const requiredAlternativePair = 2
+
 func compareRawFiles(aReader io.Reader, bReader io.Reader, opts Options) (Report, error) {
-	aState, err := parseRawFile(aReader)
+	aState, err := rawbench.ParseFile(aReader)
 	if err != nil {
-		return Report{}, err
+		return Report{}, fmt.Errorf("parsing side a raw benchmark file: %w", err)
 	}
 
-	bState, err := parseRawFile(bReader)
+	bState, err := rawbench.ParseFile(bReader)
 	if err != nil {
-		return Report{}, err
+		return Report{}, fmt.Errorf("parsing side b raw benchmark file: %w", err)
 	}
 
 	if inconclusive := rawFileInconclusive(aState, bState); inconclusive != nil {
@@ -23,14 +28,14 @@ func compareRawFiles(aReader io.Reader, bReader io.Reader, opts Options) (Report
 
 	// Raw-file comparison treats two separate benchmark series as explicit A/B
 	// alternatives, unlike raw stdin mode where labels come from sub-benchmarks.
-	benchmark := aState.name + "_vs_" + bState.name
+	benchmark := aState.Name + "_vs_" + bState.Name
 
 	rows, ok := compareAlternativeMetrics(
 		benchmark,
-		aState.name,
-		bState.name,
-		aState.metrics,
-		bState.metrics,
+		aState.Name,
+		bState.Name,
+		aState.Metrics,
+		bState.Metrics,
 		opts,
 	)
 	if !ok {
@@ -44,13 +49,28 @@ func compareRawFiles(aReader io.Reader, bReader io.Reader, opts Options) (Report
 	return evaluate(rows), nil
 }
 
-func (state *alternativeParseState) evaluate(opts Options) Report {
-	parents := sortedAlternativeParents(state.samples)
+func rawFileInconclusive(aState, bState rawbench.File) *BenchmarkVerdict {
+	switch {
+	case !aState.HasBenchmarkRows || !bState.HasBenchmarkRows:
+		return alternativeInconclusive("all", "malformed-benchmark")
+	case aState.HasMalformedRows || bState.HasMalformedRows:
+		return alternativeInconclusive("all", "malformed-benchmark")
+	case aState.HasMultipleSeries || bState.HasMultipleSeries:
+		return alternativeInconclusive("all", "ambiguous-benchmark")
+	case aState.HasUnsupportedRows || bState.HasUnsupportedRows:
+		return alternativeInconclusive("all", "unsupported-metric")
+	default:
+		return nil
+	}
+}
+
+func evaluateAlternatives(state rawbench.Alternatives, opts Options) Report {
+	parents := sortedAlternativeParents(state.Samples)
 	verdicts := make([]BenchmarkVerdict, 0, len(parents))
 	rows := make([]Comparison, 0)
 
 	for _, parent := range parents {
-		parentRows, inconclusive := state.evaluateParent(parent, opts)
+		parentRows, inconclusive := evaluateAlternativeParent(state.Samples, parent, opts)
 		if inconclusive != nil {
 			verdicts = append(verdicts, *inconclusive)
 
@@ -71,7 +91,7 @@ func (state *alternativeParseState) evaluate(opts Options) Report {
 	return Report{Verdicts: verdicts}
 }
 
-func sortedAlternativeParents(samples alternativeSampleSet) []string {
+func sortedAlternativeParents(samples rawbench.Samples) []string {
 	parents := make([]string, 0, len(samples))
 	for parent := range samples {
 		parents = append(parents, parent)
@@ -82,8 +102,12 @@ func sortedAlternativeParents(samples alternativeSampleSet) []string {
 	return parents
 }
 
-func (state *alternativeParseState) evaluateParent(parent string, opts Options) ([]Comparison, *BenchmarkVerdict) {
-	labels := state.samples[parent]
+func evaluateAlternativeParent(
+	samples rawbench.Samples,
+	parent string,
+	opts Options,
+) ([]Comparison, *BenchmarkVerdict) {
+	labels := samples[parent]
 
 	baselineLabel, candidateLabel, ok := selectAlternativeLabels(labels, opts)
 	if !ok {
@@ -102,8 +126,6 @@ func (state *alternativeParseState) evaluateParent(parent string, opts Options) 
 
 	rows, ok := compareAlternativeMetrics(parent, baselineLabel, candidateLabel, baselineMetrics, candidateMetrics, opts)
 	if !ok {
-		state.hasInsufficientRows = true
-
 		return nil, alternativeInconclusive(parent, "insufficient-samples")
 	}
 
@@ -225,14 +247,12 @@ func alternativeInconclusive(parent, reason string) *BenchmarkVerdict {
 	}
 }
 
-func (state *alternativeParseState) emptyAlternativeReport() Report {
+func emptyAlternativeReport(state rawbench.Alternatives) Report {
 	switch {
-	case state.hasMalformedRows:
+	case state.HasMalformedRows:
 		return inconclusiveReport("malformed-benchmark")
-	case state.hasUnsupportedRows:
+	case state.HasUnsupportedRows:
 		return inconclusiveReport("unsupported-metric")
-	case state.hasInsufficientRows:
-		return inconclusiveReport("insufficient-samples")
 	default:
 		return inconclusiveReport("malformed-benchmark")
 	}

@@ -2,6 +2,8 @@ package verdict
 
 import "math"
 
+const percentScale = 100
+
 func mean(values []float64) float64 {
 	// Callers enforce non-empty sample sets before statistical comparison.
 	total := 0.0

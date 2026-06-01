@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/KEINOS/go-verdict/verdict/internal/benchparser"
+	"github.com/KEINOS/go-verdict/verdict/internal/benchparser/rawbench"
 	"github.com/KEINOS/go-verdict/verdict/internal/pareto"
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +26,6 @@ const (
 	labelOld                 = "old"
 	optionAlphaName          = "alpha"
 	optionMinDeltaName       = "min-delta"
-	rawBadValue              = "bad"
 	reasonMixed              = "mixed result"
 	reasonSame               = "same"
 	altMode                  = "alternatives"
@@ -654,41 +655,6 @@ func TestDirectionMarkDefault(t *testing.T) {
 	require.Equal(t, "=", got, "unexpected direction mark")
 }
 
-func TestPrivateEdgeBranches(t *testing.T) {
-	t.Parallel()
-
-	state := newCSVParseState()
-
-	state.handleRecord(nil, Options{})
-	require.Empty(t, state.rows,
-		"no rows should be added when record is nil")
-
-	state.updateBenchmarkSetMismatch([]string{benchmarkFoo})
-	require.False(t, state.hasBenchmarkSetMismatch,
-		"benchmark set mismatch should remain false when fields are missing")
-
-	state.metric = metricSecPerOp
-	state.pValueIndex = 1
-
-	_, ok := state.parseComparison([]string{benchmarkFoo, "0.001"}, Options{})
-	require.False(t, ok,
-		"comparison with missing delta index should not parse")
-
-	got := findFieldIndex([]string{"foo"}, "bar")
-	require.Equal(t, -1, got,
-		"expect indext to be -1")
-
-	for _, rawDelta := range []string{"", "~", "?", rawBadValue} {
-		_, ok := parseDeltaPercent(rawDelta)
-		require.False(t, ok,
-			"invalid delta %q should not parse", rawDelta)
-	}
-
-	isCompLine := looksLikeComparisonLine("Foo")
-	require.False(t, isCompLine,
-		"single-field line should not look like comparison")
-}
-
 func TestDecideNoMetricsIsInconclusive(t *testing.T) {
 	t.Parallel()
 
@@ -1165,41 +1131,6 @@ geomean               1.0n      10.0n ? ¹ ²
 		"unexpected candidate label")
 }
 
-func TestPrivateRawFileBenchmarkLineBranches(t *testing.T) {
-	t.Parallel()
-
-	for _, line := range []string{
-		"BenchmarkExampleFast-10 100",
-		"BenchmarkExampleFast-10 nope 1 ns/op",
-		"BenchmarkExampleFast-10 100 1",
-		"BenchmarkExampleFast-10 100 1 ns/op 2",
-		"-10 100 1 ns/op",
-	} {
-		_, _, ok := parseRawFileBenchmarkLine(line)
-		require.False(t, ok, "line '%q' should not parse", line)
-	}
-}
-
-func TestPrivateRawDecodedLineBranches(t *testing.T) {
-	t.Parallel()
-
-	decoded, ok := decodeRawBenchmarkLine("BenchmarkFoo/original-10 100 10 ns/op 1 MB/s")
-	require.True(t, ok, "valid raw benchmark line should decode")
-	require.Equal(t, "BenchmarkFoo/original-10", decoded.name, "unexpected benchmark name")
-	require.Equal(t, map[string]float64{metricSecPerOp: 10}, decoded.metrics,
-		"unsupported metrics should be ignored during decoding")
-
-	for _, line := range []string{
-		"BenchmarkFoo/original-10",
-		"BenchmarkFoo/original-10 nope 10 ns/op",
-		"BenchmarkFoo/original-10 100 10",
-		"BenchmarkFoo/original-10 100 bad ns/op",
-	} {
-		_, ok := decodeRawBenchmarkLine(line)
-		require.False(t, ok, "line %q should not decode", line)
-	}
-}
-
 func TestParseAlternativesModeNestedNameAndCustomLabels(t *testing.T) {
 	t.Parallel()
 
@@ -1504,7 +1435,7 @@ BenchmarkA/original-10 100 10 ns/op
 func TestSortedAlternativeParentsOrdersMapKeys(t *testing.T) {
 	t.Parallel()
 
-	samples := alternativeSampleSet{
+	samples := rawbench.Samples{
 		"BenchmarkZ": {},
 		"BenchmarkA": {},
 		"BenchmarkM": {},
@@ -1518,17 +1449,18 @@ func TestCommonMetricsOrdersMapKeys(t *testing.T) {
 	t.Parallel()
 
 	left := map[string][]float64{
-		metricBytesPerOp:  {1},
-		metricSecPerOp:    {1},
-		metricAllocsPerOp: {1},
+		benchparser.MetricBytesPerOp:  {1},
+		metricSecPerOp:                {1},
+		benchparser.MetricAllocsPerOp: {1},
 	}
 	right := map[string][]float64{
-		metricSecPerOp:    {1},
-		metricAllocsPerOp: {1},
-		metricBytesPerOp:  {1},
+		metricSecPerOp:                {1},
+		benchparser.MetricAllocsPerOp: {1},
+		benchparser.MetricBytesPerOp:  {1},
 	}
 
-	require.Equal(t, []string{metricBytesPerOp, metricAllocsPerOp, metricSecPerOp}, commonMetrics(left, right),
+	want := []string{benchparser.MetricBytesPerOp, benchparser.MetricAllocsPerOp, metricSecPerOp}
+	require.Equal(t, want, commonMetrics(left, right),
 		"common metrics should sort map keys deterministically")
 }
 
@@ -1552,34 +1484,8 @@ BenchmarkEnhance/enhanced-10 100 8.5 ns/op
 		"unexpected p-value")
 }
 
-func TestPrivateAlternativeBranches(t *testing.T) {
-	t.Parallel()
-
-	got := trimCPUSuffix("BenchmarkFoo/original")
-	require.Equal(t, "BenchmarkFoo/original", got,
-		"benchmark name without numeric suffix should not be trimmed")
-
-	got = trimCPUSuffix("BenchmarkFoo/original-fast")
-	require.Equal(t, "BenchmarkFoo/original-fast", got,
-		"benchmark name with non-numeric suffix should not be trimmed")
-
-	_, _, ok := splitRawBenchmarkName("BenchmarkFoo-10")
-	require.False(t, ok, "benchmark name without sub-benchmark should not split")
-
-	metric, ok := normalizeRawMetric("MB/s")
-	require.False(t, ok, "unsupported metric should not parse")
-	require.Empty(t, metric, "unsupported metric should return empty")
-}
-
 func TestPrivateAlternativeMathBranches(t *testing.T) {
 	t.Parallel()
-
-	metrics, ok := parseRawMetrics([]string{rawBadValue, "MB/s", "10", metricNanosecondsPerOp})
-	require.True(t, ok, "unsupported bad metric value should not make the row malformed")
-	require.InDelta(t, 10.0, metrics[metricSecPerOp], 1e-9, "valid metric should be parsed")
-
-	_, ok = parseRawMetrics([]string{rawBadValue, metricNanosecondsPerOp})
-	require.False(t, ok, "bad metric value should not parse")
 
 	got := variance([]float64{1}, 1)
 	require.InDelta(t, 0.0, got, 1e-9, "variance of one sample should be zero")
@@ -1591,68 +1497,17 @@ func TestPrivateAlternativeMathBranches(t *testing.T) {
 func TestPrivateAlternativeEmptyReportBranches(t *testing.T) {
 	t.Parallel()
 
-	insufficientState := alternativeParseState{hasInsufficientRows: true}
+	unsupportedState := rawbench.Alternatives{HasUnsupportedRows: true}
 
-	got := insufficientState.emptyAlternativeReport()
-	require.Equal(t, reasonInsufficient, got.Verdicts[0].ReasonCode,
-		"report reason code should indicate insufficient samples when state has insufficient rows")
+	got := emptyAlternativeReport(unsupportedState)
+	require.Equal(t, reasonUnsupported, got.Verdicts[0].ReasonCode,
+		"report reason code should indicate unsupported metrics when state has unsupported rows")
 
-	emptyState := alternativeParseState{}
+	emptyState := rawbench.Alternatives{}
 
-	got = emptyState.emptyAlternativeReport()
+	got = emptyAlternativeReport(emptyState)
 	require.Equal(t, reasonMalformedBenchmark, got.Verdicts[0].ReasonCode,
 		"report reason code should indicate malformed benchmark when state is empty")
-}
-
-func TestPrivateTextLabelBranches(t *testing.T) {
-	t.Parallel()
-
-	textState := textParseState{baselineLabel: "already", candidateLabel: "set"}
-	textState.captureLabels("│ old.txt │ new.txt │")
-	require.Equal(t, "already", textState.baselineLabel,
-		"existing baseline label should not be overwritten")
-	require.Equal(t, "set", textState.candidateLabel,
-		"existing candidate label should not be overwritten")
-
-	emptyTextState := textParseState{}
-	emptyTextState.captureLabels("│ sec/op │ sec/op vs base │")
-	require.Empty(t, emptyTextState.baselineLabel,
-		"metric header should not set baseline label")
-	require.Empty(t, emptyTextState.candidateLabel,
-		"metric header should not set candidate label")
-
-	_, ok := parseBenchstatTextLabels("│ sec/op │ sec/op vs base │")
-	require.False(t, ok,
-		"metric header should not parse as labels")
-
-	got := emptyTextState.rawBaselineLabel()
-	require.Equal(t, labelOld, got,
-		"raw baseline fallback should be old when baseline label is empty")
-
-	got = emptyTextState.rawCandidateLabel()
-	require.Equal(t, labelNew, got,
-		"raw candidate fallback should be new when candidate label is empty")
-}
-
-func TestPrivateCSVLabelBranches(t *testing.T) {
-	t.Parallel()
-
-	csvState := csvParseState{}
-	csvState.captureLabels([]string{"", "sec/op", "CI", "sec/op", "CI", "vs base", "P"})
-	csvState.captureLabels([]string{"", "", "", labelNewTxt})
-
-	require.Empty(t, csvState.baselineLabel,
-		"csv header rows should not set baseline label")
-	require.Empty(t, csvState.candidateLabel,
-		"csv header rows should not set candidate label")
-	require.Equal(t, labelOld, csvState.displayBaselineLabel(),
-		"display baseline fallback should be old")
-	require.Equal(t, labelNew, csvState.displayCandidateLabel(),
-		"display candidate fallback should be new")
-	require.Equal(t, labelOld, csvState.rawBaselineLabel(),
-		"raw baseline fallback should be old")
-	require.Equal(t, labelNew, csvState.rawCandidateLabel(),
-		"raw candidate fallback should be new")
 }
 
 func TestPrivateDisplayLabelBranches(t *testing.T) {
@@ -1703,6 +1558,13 @@ func TestPrivateDisplayLabelWithFallbackBranches(t *testing.T) {
 			require.Equal(t, tt.want, displayLabelWithFallback(tt.label, tt.fallback))
 		})
 	}
+}
+
+func TestLabelWithFallbackBranches(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, labelOld, labelWithFallback("", labelOld))
+	require.Equal(t, labelNew, labelWithFallback(labelNew, labelOld))
 }
 
 func TestWriteVerboseTextHeaderErrorContainsContext(t *testing.T) {
