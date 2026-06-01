@@ -58,6 +58,12 @@ make build
 repeated E2E runs from failing when a stale `./dist/verdict` binary already
 exists.
 
+See all available development targets with:
+
+```sh
+make help
+```
+
 ## End-to-End Checks
 
 The E2E targets build `./dist/verdict`, generate or use files in `testdata/`,
@@ -121,7 +127,17 @@ All paths produce `Comparison` rows and then use the shared evaluator in the
 are written by methods on `Report`.
 
 The CLI lives in `cmd/verdict/`. The public library API lives in `verdict/`.
-The embedded AI Agent skill text lives in `skill/verdict/`.
+The embedded AI Agent skill text lives in `cmd/verdict/internal/skill/`.
+
+## Project Layout
+
+```text
+cmd/verdict/                 CLI entry point
+cmd/verdict/internal/skill/  Embedded AI Agent skill text
+verdict/                     Parser, evaluator, and output writer
+testdata/                    Demo benchmarks and generated fixture files
+Makefile                     Fixture and end-to-end commands
+```
 
 ## Error Message Style
 
@@ -166,7 +182,7 @@ Use this checklist when extending what `verdict` can read or write:
 After Markdown edits, run:
 
 ```sh
-markdownlint-cli2 --fix README.md CONTRIBUTING.md tasks.md plan.md
+markdownlint-cli2 --fix README.md README_CLI.md README_LIB.md README_WORKFLOWS.md CONTRIBUTING.md
 ```
 
 Limit the file list to the Markdown files you changed when possible. This keeps

@@ -13,6 +13,8 @@ testdata/*.txt
 
 # Include specific files
 !README.md
+!README_CLI.md
+!README_LIB.md
 !README_WORKFLOWS.md
 !CONTRIBUTING.md
 !cmd/verdict/internal/skill/SKILL.md
