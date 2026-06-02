@@ -27,8 +27,8 @@ Example-10 10.0ns 8.0ns -20.00% (p=0.001 n=10)
 	// Example-10: new wins
 }
 
-func ExampleParse_rawAlternatives() {
-	// raw alternatives format example (explicit A/B input without statistical test results)
+func ExampleParse_rawGoTestBench() {
+	// raw go test -bench sub-benchmarks format example (explicit A/B input without statistical test results)
 	input := strings.Repeat(
 		"BenchmarkEncode/original-10 100 10 ns/op\n", verdict.RawComparisonMinSamples,
 	) + strings.Repeat(
@@ -36,7 +36,7 @@ func ExampleParse_rawAlternatives() {
 	)
 
 	opts := verdict.NewOptions()
-	opts.Mode = "alternatives"
+	opts.Mode = "gotestbench"
 	opts.Baseline = "original"
 	opts.Candidate = "enhanced"
 
@@ -56,11 +56,11 @@ func ExampleParse_rawAlternatives() {
 
 func ExampleCompareRawFiles() {
 	fast := strings.NewReader(
-		// raw alternatives format example
+		// raw go test -bench sub-benchmarks format example
 		strings.Repeat("BenchmarkFast-10 100 5 ns/op\n", verdict.RawComparisonMinSamples),
 	)
 	slow := strings.NewReader(
-		// raw alternatives format example
+		// raw go test -bench sub-benchmarks format example
 		strings.Repeat("BenchmarkSlow-10 100 10 ns/op\n", verdict.RawComparisonMinSamples),
 	)
 

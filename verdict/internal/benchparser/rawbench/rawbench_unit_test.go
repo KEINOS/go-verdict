@@ -22,10 +22,10 @@ func (failingReader) Read(_ []byte) (int, error) {
 
 var _ io.Reader = failingReader{}
 
-func TestParseAlternatives(t *testing.T) {
+func TestParseGoTestBench(t *testing.T) {
 	t.Parallel()
 
-	result, err := ParseAlternatives("BenchmarkFoo/original-10 100 10 ns/op 1 MB/s\n")
+	result, err := ParseGoTestBench("BenchmarkFoo/original-10 100 10 ns/op 1 MB/s\n")
 	require.NoError(t, err)
 	require.True(t, result.HasBenchmarkRows)
 	require.Equal(t, Samples{
@@ -46,22 +46,22 @@ func TestParseFile(t *testing.T) {
 	require.Equal(t, map[string][]float64{benchparser.MetricSecPerOp: {10}}, result.Metrics)
 }
 
-func TestLooksLikeAlternatives(t *testing.T) {
+func TestLooksLikeGoTestBench(t *testing.T) {
 	t.Parallel()
 
-	require.False(t, LooksLikeAlternatives("PASS\nBenchmarkFoo 100 1 ns/op\n"))
-	require.True(t, LooksLikeAlternatives("PASS\nBenchmarkFoo/original-10 100 1 ns/op\n"))
+	require.False(t, LooksLikeGoTestBench("PASS\nBenchmarkFoo 100 1 ns/op\n"))
+	require.True(t, LooksLikeGoTestBench("PASS\nBenchmarkFoo/original-10 100 1 ns/op\n"))
 }
 
-func TestParseAlternativesBranches(t *testing.T) {
+func TestParseGoTestBenchBranches(t *testing.T) {
 	t.Parallel()
 
-	result, err := ParseAlternatives("PASS\nBenchmarkFoo/original-10 100\nBenchmarkFoo/enhanced-10 100 1 MB/s\n")
+	result, err := ParseGoTestBench("PASS\nBenchmarkFoo/original-10 100\nBenchmarkFoo/enhanced-10 100 1 MB/s\n")
 	require.NoError(t, err)
 	require.True(t, result.HasMalformedRows)
 	require.True(t, result.HasUnsupportedRows)
 
-	_, err = ParseAlternatives("BenchmarkFoo/original-10 100 " + strings.Repeat("1", longLineSize) + " ns/op\n")
+	_, err = ParseGoTestBench("BenchmarkFoo/original-10 100 " + strings.Repeat("1", longLineSize) + " ns/op\n")
 	require.Error(t, err)
 }
 

@@ -45,13 +45,13 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 		"raw benchmark file for side B")
 	flagSet.StringVar(&opts.Mode,
 		"mode", opts.Mode,
-		"input mode: auto, benchstat, or alternatives")
+		"input mode: auto, benchstat, or gotestbench")
 	flagSet.StringVar(&opts.Baseline,
 		"baseline", "",
-		"baseline sub-benchmark name for alternatives mode")
+		"baseline sub-benchmark name for gotestbench mode")
 	flagSet.StringVar(&opts.Candidate,
 		"candidate", "",
-		"candidate sub-benchmark name for alternatives mode")
+		"candidate sub-benchmark name for gotestbench mode")
 	flagSet.Float64Var(&opts.Alpha,
 		"alpha", opts.Alpha,
 		"p-value threshold")
@@ -70,7 +70,7 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 		return nil, cliOptions{}, fmt.Errorf("%w: %w", errParsingFlags, err)
 	}
 
-	if opts.Mode != modeDefault && opts.Mode != "benchstat" && opts.Mode != "alternatives" {
+	if opts.Mode != modeDefault && opts.Mode != "benchstat" && opts.Mode != "gotestbench" {
 		return nil, cliOptions{}, errUnknownMode
 	}
 

@@ -90,12 +90,12 @@ Known reason codes include:
 | --- | --- |
 | `missing-pvalue` | The comparison does not include a p-value. |
 | `benchmark-set-mismatch` | The old and new benchmark sets are different. |
-| `missing-baseline` | Raw alternatives input did not find the baseline sub-benchmark. |
-| `missing-candidate` | Raw alternatives input did not find the candidate sub-benchmark. |
+| `missing-baseline` | Raw go test -bench input did not find the baseline sub-benchmark. |
+| `missing-candidate` | Raw go test -bench input did not find the candidate sub-benchmark. |
 | `insufficient-samples` | Raw comparison found too few repeated samples. |
 | `unsupported-metric` | Raw comparison did not find supported metrics to compare. |
 | `malformed-benchmark` | Raw comparison could not parse the benchmark rows. |
-| `ambiguous-alternatives` | Raw alternatives input could not select one baseline/candidate pair from labels. |
+| `ambiguous-labels` | Raw go test -bench input could not select one baseline/candidate pair from labels. |
 | `ambiguous-benchmark` | A raw file contains more than one benchmark series. |
 
 ## Related Documentation

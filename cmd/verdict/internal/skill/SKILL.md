@@ -35,7 +35,7 @@ When optimizing Go code:
 5. Keep or reject the candidate based on the verdict outcome and practical trade-offs.
 6. Report the short verdict, the benchmark command, and any follow-up needed. Use `--verbose` only when the reason or metric details matter.
 
-Auto mode only treats `original` and `enhanced` as the default raw alternative pair. Use `--mode alternatives --baseline <name> --candidate <name>` for labels such as `baseline` and `candidate`.
+Auto mode only treats `original` and `enhanced` as the default raw alternative pair. Use `--mode gotestbench --baseline <name> --candidate <name>` for labels such as `baseline` and `candidate`.
 
 ## Choose a Workflow
 
@@ -66,11 +66,11 @@ benchstat old.txt new.txt | verdict
 5. Use `--format json` when another tool will consume the result.
 6. Use `-a` and `-b` when benchmark function names differ.
 
-## Raw Alternatives
+## Raw Go Test Bench Input
 
 - Auto mode compares `original` and `enhanced` when both labels exist under the same parent benchmark.
 - If that default pair is absent, auto mode infers a pair only when the parent has exactly two labels.
-- Use `--mode alternatives --baseline <name> --candidate <name>` for non-default labels or ambiguous inputs.
+- Use `--mode gotestbench --baseline <name> --candidate <name>` for non-default labels or ambiguous inputs.
 
 ## Interpret Results
 

@@ -13,18 +13,19 @@ import (
 )
 
 const (
-	flagFormat     = "--format"
-	flagAlpha      = "--alpha"
-	flagMinDelta   = "--min-delta"
-	flagMode       = "--mode"
-	formatText     = "text"
-	formatJSON     = "json"
-	modeAlt        = "alternatives"
-	optionAlpha    = "alpha"
-	optionMinDelta = "min-delta"
-	winningInput   = "name          old time/op  new time/op  delta\n" +
+	flagFormat      = "--format"
+	flagAlpha       = "--alpha"
+	flagMinDelta    = "--min-delta"
+	flagMode        = "--mode"
+	formatText      = "text"
+	formatJSON      = "json"
+	modeGoTestBench = "gotestbench"
+	removedMode     = "alternatives"
+	optionAlpha     = "alpha"
+	optionMinDelta  = "min-delta"
+	winningInput    = "name          old time/op  new time/op  delta\n" +
 		"Foo-8         10.0ns ± 1%   8.0ns ± 1%  -20.00% (p=0.001 n=10+10)\n"
-	alternativesInput = "BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
+	goTestBenchInput = "BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
 		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n" +
 		"BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
 		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n" +
@@ -189,7 +190,7 @@ func TestRunCLIHelpExplainsInputModes(t *testing.T) {
 	for _, want := range []string{
 		"auto: detect benchstat output or raw go test -bench output.",
 		"benchstat: read already-compared benchstat text or CSV.",
-		"alternatives: compare raw sub-benchmarks, such as original vs enhanced.",
+		"gotestbench: compare raw go test -bench sub-benchmarks, such as original vs enhanced.",
 	} {
 		require.Contains(t, out.String(), want,
 			"help output should explain each input mode")
@@ -430,16 +431,16 @@ func TestRunCLIABFilesParseError(t *testing.T) {
 	}
 }
 
-func TestRunCLIAlternativesScannerErrorIsParseError(t *testing.T) {
+func TestRunCLIGoTestBenchScannerErrorIsParseError(t *testing.T) {
 	t.Parallel()
 
 	input := "BenchmarkEnhance/original-10 100 " + strings.Repeat("1", 70*1024) + " ns/op\n"
 
-	err := runCLI([]string{flagMode, modeAlt}, strings.NewReader(input), &strings.Builder{})
+	err := runCLI([]string{flagMode, modeGoTestBench}, strings.NewReader(input), &strings.Builder{})
 	require.Error(t, err,
 		"scanner failure should return parse error")
 
-	for _, want := range []string{"parsing input", "scanning raw alternatives input"} {
+	for _, want := range []string{"parsing input", "scanning raw go test -bench input"} {
 		require.ErrorContains(t, err, want,
 			"scanner error should include expected context")
 	}
@@ -585,35 +586,35 @@ func TestRunCLIJSONWriteErrorContainsContext(t *testing.T) {
 		"json writer failure should return output context")
 }
 
-func TestRunCLIAlternativesMode(t *testing.T) {
+func TestRunCLIGoTestBenchMode(t *testing.T) {
 	t.Parallel()
 
 	var out strings.Builder
 
-	err := runCLI([]string{flagMode, modeAlt}, strings.NewReader(alternativesInput), &out)
+	err := runCLI([]string{flagMode, modeGoTestBench}, strings.NewReader(goTestBenchInput), &out)
 	require.NoError(t, err,
-		"failed to run alternatives mode")
+		"failed to run gotestbench mode")
 	require.Contains(t, out.String(), "BenchmarkEnhance: enhanced wins",
-		"alternatives mode should report enhanced winner")
+		"gotestbench mode should report enhanced winner")
 }
 
-func TestRunCLIAutoModeAlternatives(t *testing.T) {
+func TestRunCLIAutoModeGoTestBench(t *testing.T) {
 	t.Parallel()
 
 	var out strings.Builder
 
-	err := runCLI(nil, strings.NewReader(alternativesInput), &out)
+	err := runCLI(nil, strings.NewReader(goTestBenchInput), &out)
 	require.NoError(t, err,
-		"failed to run auto mode with alternatives input")
+		"failed to run auto mode with raw go test -bench input")
 	require.Equal(t, "BenchmarkEnhance: enhanced wins\n", out.String(),
 		"auto mode should emit concise alternative verdict")
 }
 
-func TestRunCLIAlternativesModeWithCustomLabels(t *testing.T) {
+func TestRunCLIGoTestBenchModeWithCustomLabels(t *testing.T) {
 	t.Parallel()
 
 	input := strings.ReplaceAll(
-		strings.ReplaceAll(alternativesInput, "original", "base"),
+		strings.ReplaceAll(goTestBenchInput, "original", "base"),
 		"enhanced",
 		"candidate",
 	)
@@ -621,12 +622,12 @@ func TestRunCLIAlternativesModeWithCustomLabels(t *testing.T) {
 	var out strings.Builder
 
 	err := runCLI(
-		[]string{flagMode, modeAlt, "--baseline", "base", "--candidate", "candidate"},
+		[]string{flagMode, modeGoTestBench, "--baseline", "base", "--candidate", "candidate"},
 		strings.NewReader(input),
 		&out,
 	)
 	require.NoError(t, err,
-		"failed to run alternatives mode with custom labels")
+		"failed to run gotestbench mode with custom labels")
 	require.Contains(t, out.String(), "BenchmarkEnhance: candidate wins",
 		"custom labels should be reflected in winner output")
 }
@@ -637,6 +638,14 @@ func TestRunCLIUnknownMode(t *testing.T) {
 	err := runCLI([]string{flagMode, "sideways"}, strings.NewReader(winningInput), &strings.Builder{})
 	require.ErrorIs(t, err, errUnknownMode,
 		"unknown mode should return errUnknownMode")
+}
+
+func TestRunCLIRemovedMode(t *testing.T) {
+	t.Parallel()
+
+	err := runCLI([]string{flagMode, removedMode}, strings.NewReader(goTestBenchInput), &strings.Builder{})
+	require.Equal(t, errUnknownMode, err,
+		"removed alternatives mode should return the exact unknown mode error")
 }
 
 // ----------------------------------------------------------------------------

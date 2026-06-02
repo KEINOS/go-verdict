@@ -19,16 +19,16 @@ const (
 )
 
 var (
-	errReadingInput         = errors.New("reading benchstat input")
-	errScanningAlternatives = errors.New("scanning raw alternatives input")
-	errScanningFile         = errors.New("scanning raw benchmark file input")
+	errReadingInput        = errors.New("reading benchstat input")
+	errScanningGoTestBench = errors.New("scanning raw go test -bench input")
+	errScanningFile        = errors.New("scanning raw benchmark file input")
 )
 
-// Samples stores raw alternatives as parent benchmark, label, metric, and samples.
+// Samples stores raw go test -bench sub-benchmarks as parent benchmark, label, metric, and samples.
 type Samples map[string]map[string]map[string][]float64
 
-// Alternatives contains decoded raw sub-benchmark alternatives and input-shape flags.
-type Alternatives struct {
+// GoTestBench contains decoded raw go test -bench sub-benchmarks and input-shape flags.
+type GoTestBench struct {
 	Samples            Samples
 	HasBenchmarkRows   bool
 	HasMalformedRows   bool
@@ -56,9 +56,9 @@ type sample struct {
 	metrics map[string]float64
 }
 
-// ParseAlternatives decodes raw sub-benchmark alternatives.
-func ParseAlternatives(input string) (Alternatives, error) {
-	result := Alternatives{
+// ParseGoTestBench decodes raw go test -bench sub-benchmarks.
+func ParseGoTestBench(input string) (GoTestBench, error) {
+	result := GoTestBench{
 		Samples:            make(Samples),
 		HasBenchmarkRows:   false,
 		HasMalformedRows:   false,
@@ -72,14 +72,14 @@ func ParseAlternatives(input string) (Alternatives, error) {
 
 	err := scanner.Err()
 	if err != nil {
-		return Alternatives{}, fmt.Errorf("%w: %w", errScanningAlternatives, err)
+		return GoTestBench{}, fmt.Errorf("%w: %w", errScanningGoTestBench, err)
 	}
 
 	return result, nil
 }
 
-// LooksLikeAlternatives reports whether input contains a decodable raw alternative row.
-func LooksLikeAlternatives(input string) bool {
+// LooksLikeGoTestBench reports whether input contains a decodable raw go test -bench row.
+func LooksLikeGoTestBench(input string) bool {
 	scanner := bufio.NewScanner(strings.NewReader(input))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -124,7 +124,7 @@ func ParseFile(reader io.Reader) (File, error) {
 	return result, nil
 }
 
-func (result *Alternatives) handleLine(line string) {
+func (result *GoTestBench) handleLine(line string) {
 	line = strings.TrimSpace(line)
 	if !strings.HasPrefix(line, "Benchmark") {
 		return
@@ -148,7 +148,7 @@ func (result *Alternatives) handleLine(line string) {
 	result.addSample(parsed)
 }
 
-func (result *Alternatives) addSample(parsed sample) {
+func (result *GoTestBench) addSample(parsed sample) {
 	if _, ok := result.Samples[parsed.parent]; !ok {
 		result.Samples[parsed.parent] = map[string]map[string][]float64{}
 	}

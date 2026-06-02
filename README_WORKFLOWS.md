@@ -31,13 +31,13 @@ func BenchmarkMyHeavyFunc(b *testing.B) {
 Collect repeated benchmark samples:
 
 ```sh
-go test -run='^$' -bench='BenchmarkMyHeavyFunc' -benchmem -count=20 ./your/package > alternatives.txt
+go test -run='^$' -bench='BenchmarkMyHeavyFunc' -benchmem -count=20 ./your/package > gotestbench.txt
 ```
 
 Then compare the two sub-benchmarks:
 
 ```sh
-verdict < alternatives.txt
+verdict < gotestbench.txt
 ```
 
 Auto mode first checks whether both `original` and `enhanced` exist under the same parent benchmark. If both exist, it compares that pair.
@@ -47,7 +47,7 @@ Otherwise, auto mode compares one pair only when the parent benchmark has exactl
 Use explicit labels when the [raw benchmark output](https://go.googlesource.com/proposal/+/master/design/14313-benchmark-format.md) has more than two alternatives or non-default names:
 
 ```sh
-verdict --mode alternatives --baseline original --candidate enhanced < alternatives.txt
+verdict --mode gotestbench --baseline original --candidate enhanced < gotestbench.txt
 ```
 
 The outcome meaning is from the new option side:

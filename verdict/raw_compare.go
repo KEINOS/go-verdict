@@ -64,7 +64,7 @@ func rawFileInconclusive(aState, bState rawbench.File) *BenchmarkVerdict {
 	}
 }
 
-func evaluateAlternatives(state rawbench.Alternatives, opts Options) Report {
+func evaluateGoTestBench(state rawbench.GoTestBench, opts Options) Report {
 	parents := sortedAlternativeParents(state.Samples)
 	verdicts := make([]BenchmarkVerdict, 0, len(parents))
 	rows := make([]Comparison, 0)
@@ -111,7 +111,7 @@ func evaluateAlternativeParent(
 
 	baselineLabel, candidateLabel, ok := selectAlternativeLabels(labels, opts)
 	if !ok {
-		return nil, alternativeInconclusive(parent, "ambiguous-alternatives")
+		return nil, alternativeInconclusive(parent, "ambiguous-labels")
 	}
 
 	baselineMetrics, hasBaseline := labels[baselineLabel]
@@ -247,7 +247,7 @@ func alternativeInconclusive(parent, reason string) *BenchmarkVerdict {
 	}
 }
 
-func emptyAlternativeReport(state rawbench.Alternatives) Report {
+func emptyGoTestBenchReport(state rawbench.GoTestBench) Report {
 	switch {
 	case state.HasMalformedRows:
 		return inconclusiveReport("malformed-benchmark")

@@ -75,11 +75,11 @@ Options:
       Output format. Default: text.
   -v, --version
       Print the command version.
-  --mode auto|benchstat|alternatives
+  --mode auto|benchstat|gotestbench
       Input mode. Default: auto.
       auto: detect benchstat output or raw go test -bench output.
       benchstat: read already-compared benchstat text or CSV.
-      alternatives: compare raw sub-benchmarks, such as original vs enhanced.
+      gotestbench: compare raw go test -bench sub-benchmarks, such as original vs enhanced.
   --verbose
       Include verdict reason and metric details in text output.
   -a file
@@ -87,9 +87,9 @@ Options:
   -b file
       Raw benchmark file for side B.
   --baseline name
-      Baseline sub-benchmark name for alternatives mode.
+      Baseline sub-benchmark name for gotestbench mode.
   --candidate name
-      Candidate sub-benchmark name for alternatives mode.
+      Candidate sub-benchmark name for gotestbench mode.
   --alpha value
       P-value threshold for statistical significance. Must be greater than 0 and at most 1. Default: 0.05.
   --min-delta value

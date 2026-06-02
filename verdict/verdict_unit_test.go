@@ -28,11 +28,11 @@ const (
 	optionMinDeltaName       = "min-delta"
 	reasonMixed              = "mixed result"
 	reasonSame               = "same"
-	altMode                  = "alternatives"
+	goTestBenchMode          = "gotestbench"
 	reasonMalformedBenchmark = "malformed-benchmark"
 	reasonInsufficient       = "insufficient-samples"
 	reasonUnsupported        = "unsupported-metric"
-	rawAltInput              = "BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
+	rawGoTestBenchInput      = "BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
 		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n" +
 		"BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
 		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n" +
@@ -160,6 +160,39 @@ func TestParseRejectsInvalidOptions(t *testing.T) {
 			require.Error(t, err)
 			require.ErrorContains(t, err, test.want,
 				"error should contain name of invalid option")
+		})
+	}
+}
+
+func TestParseModeValidation(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name    string
+		mode    string
+		wantErr bool
+	}{
+		{name: "empty mode uses auto"},
+		{name: "auto mode", mode: modeAuto},
+		{name: "benchstat mode", mode: modeBenchstat},
+		{name: "go test bench mode", mode: goTestBenchMode},
+		{name: "removed alternatives mode", mode: "alternatives", wantErr: true},
+		{name: "uppercase mode", mode: "GOTESTBENCH", wantErr: true},
+		{name: "whitespace-only mode", mode: " ", wantErr: true},
+		{name: "unknown mode", mode: "sideways", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := Parse(strings.NewReader(benchstatNewWinsInput), Options{Mode: test.mode})
+			if test.wantErr {
+				require.ErrorContains(t, err, "invalid options: unknown mode",
+					"unexpected invalid mode error")
+
+				return
+			}
+
+			require.NoError(t, err)
 		})
 	}
 }
@@ -297,15 +330,15 @@ func TestParseTextScannerErrorContainsContext(t *testing.T) {
 		"error should contain context about scanning benchstat text input")
 }
 
-func TestParseAlternativesScannerErrorContainsContext(t *testing.T) {
+func TestParseGoTestBenchScannerErrorContainsContext(t *testing.T) {
 	t.Parallel()
 
 	longLine := "BenchmarkEnhance/original-10 100 " + strings.Repeat("1", 70*1024) + " ns/op\n"
 
-	_, err := Parse(strings.NewReader(longLine), Options{Mode: altMode})
+	_, err := Parse(strings.NewReader(longLine), Options{Mode: goTestBenchMode})
 	require.Error(t, err, "expected scanner error")
-	require.ErrorContains(t, err, "scanning raw alternatives input",
-		"error should contain context about scanning raw alternatives input")
+	require.ErrorContains(t, err, "scanning raw go test -bench input",
+		"error should contain context about scanning raw go test -bench input")
 }
 
 func TestParseCSVErrorContainsContext(t *testing.T) {
@@ -729,10 +762,10 @@ func TestWriteTextMetricErrorFromReportContainsContext(t *testing.T) {
 		"error should contain context about writing text report")
 }
 
-func TestParseAlternativesModeNewWins(t *testing.T) {
+func TestParseGoTestBenchModeNewWins(t *testing.T) {
 	t.Parallel()
 
-	report, err := Parse(strings.NewReader(rawAltInput), Options{Mode: altMode})
+	report, err := Parse(strings.NewReader(rawGoTestBenchInput), Options{Mode: goTestBenchMode})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -742,15 +775,15 @@ func TestParseAlternativesModeNewWins(t *testing.T) {
 	require.Equal(t, NewWins, got.Outcome,
 		"expected outcome to be new-wins based on significant improvement in sec/op")
 	require.Len(t, got.Metrics, 3,
-		"expected all three metrics to be parsed in alternatives mode")
+		"expected all three metrics to be parsed in gotestbench mode")
 	require.Equal(t, "enhanced", got.Winner,
 		"expected winner to be enhanced based on benchmark names")
 }
 
-func TestParseAutoModeRawAlternativesInfersLabels(t *testing.T) {
+func TestParseAutoModeRawGoTestBenchInfersLabels(t *testing.T) {
 	t.Parallel()
 
-	report, err := Parse(strings.NewReader(rawAltInput), Options{})
+	report, err := Parse(strings.NewReader(rawGoTestBenchInput), Options{})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -761,7 +794,7 @@ func TestParseAutoModeRawAlternativesInfersLabels(t *testing.T) {
 		"expected winner to be inferred as enhanced based on benchmark names")
 }
 
-func TestParseAutoModeRawAlternativesInfersNonDefaultLabels(t *testing.T) {
+func TestParseAutoModeRawGoTestBenchInfersNonDefaultLabels(t *testing.T) {
 	t.Parallel()
 
 	input := `BenchmarkEnhance/base-10 100 10 ns/op
@@ -809,7 +842,7 @@ BenchmarkEnhance/candidate-10 100 8 ns/op
 		"unexpected winner")
 }
 
-func TestParseAutoModeRawAlternativesRejectsAmbiguousLabels(t *testing.T) {
+func TestParseAutoModeRawGoTestBenchRejectsAmbiguousLabels(t *testing.T) {
 	t.Parallel()
 
 	input := `BenchmarkEnhance/a-10 100 10 ns/op
@@ -827,8 +860,8 @@ BenchmarkEnhance/c-10 100 8 ns/op
 
 	require.Equal(t, Inconclusive, got.Outcome,
 		"expected outcome to be inconclusive")
-	require.Equal(t, "ambiguous-alternatives", got.ReasonCode,
-		"expected reason code to be 'ambiguous-alternatives'")
+	require.Equal(t, "ambiguous-labels", got.ReasonCode,
+		"expected reason code to be 'ambiguous-labels'")
 }
 
 func TestCompareRawFilesDifferentBenchmarkNames(t *testing.T) {
@@ -947,23 +980,23 @@ func rawInconclusiveReasonCodeContractCases() []rawReasonCodeContractCase {
 			"malformed benchmark",
 			reasonMalformedBenchmark,
 			"BenchmarkEnhance/original-10 nope 8 ns/op\n",
-			Options{Mode: altMode},
+			Options{Mode: goTestBenchMode},
 		),
 		rawParseReasonCodeCase(
 			"unsupported metric",
 			reasonUnsupported,
 			"BenchmarkEnhance/original-10 100 8 MB/s\n",
-			Options{Mode: altMode},
+			Options{Mode: goTestBenchMode},
 		),
 		rawParseReasonCodeCase(
 			"insufficient samples",
 			reasonInsufficient,
 			"BenchmarkEnhance/original-10 100 8 ns/op\nBenchmarkEnhance/enhanced-10 100 7 ns/op\n",
-			Options{Mode: altMode},
+			Options{Mode: goTestBenchMode},
 		),
 		rawParseReasonCodeCase(
-			"ambiguous alternatives",
-			"ambiguous-alternatives",
+			"ambiguous labels",
+			"ambiguous-labels",
 			"BenchmarkEnhance/a-10 100 10 ns/op\nBenchmarkEnhance/b-10 100 8 ns/op\nBenchmarkEnhance/c-10 100 8 ns/op\n",
 			Options{},
 		),
@@ -971,13 +1004,13 @@ func rawInconclusiveReasonCodeContractCases() []rawReasonCodeContractCase {
 			"missing baseline",
 			"missing-baseline",
 			"BenchmarkEnhance/enhanced-10 100 8 ns/op\n",
-			Options{Mode: altMode},
+			Options{Mode: goTestBenchMode},
 		),
 		rawParseReasonCodeCase(
 			"missing candidate",
 			"missing-candidate",
 			"BenchmarkEnhance/original-10 100 8 ns/op\n",
-			Options{Mode: altMode},
+			Options{Mode: goTestBenchMode},
 		),
 		rawFileReasonCodeCase("ambiguous benchmark", "ambiguous-benchmark"),
 	}
@@ -1051,7 +1084,7 @@ func TestCompareRawFilesSampleBoundaries(t *testing.T) {
 	}
 }
 
-func rawAlternativeSamples(count int) string {
+func rawGoTestBenchSamples(count int) string {
 	var input strings.Builder
 
 	for range count {
@@ -1103,6 +1136,25 @@ func TestCompareRawFilesRejectsInvalidOptions(t *testing.T) {
 		"error should mention invalid alpha")
 }
 
+func TestCompareRawFilesIgnoresModeAndLabelOptions(t *testing.T) {
+	t.Parallel()
+
+	aInput := rawFileSamples("BenchmarkExampleFast", 1, RawComparisonMinSamples)
+	bInput := rawFileSamples("BenchmarkExampleSlow", 10, RawComparisonMinSamples)
+
+	want, err := CompareRawFiles(strings.NewReader(aInput), strings.NewReader(bInput), Options{})
+	require.NoError(t, err)
+
+	got, err := CompareRawFiles(
+		strings.NewReader(aInput),
+		strings.NewReader(bInput),
+		Options{Mode: "sideways", Baseline: "ignored-baseline", Candidate: "ignored-candidate"},
+	)
+	require.NoError(t, err)
+	require.Equal(t, want, got,
+		"raw-file comparison should ignore mode and label options")
+}
+
 func TestParseTextBenchmarkSetMismatchReturnsLabels(t *testing.T) {
 	t.Parallel()
 
@@ -1131,7 +1183,7 @@ geomean               1.0n      10.0n ? ¹ ²
 		"unexpected candidate label")
 }
 
-func TestParseAlternativesModeNestedNameAndCustomLabels(t *testing.T) {
+func TestParseGoTestBenchModeNestedNameAndCustomLabels(t *testing.T) {
 	t.Parallel()
 
 	input := `BenchmarkEnhance/group/base-10 100 12 ns/op
@@ -1145,7 +1197,7 @@ BenchmarkEnhance/group/candidate-10 100 10 ns/op
 	report, err := Parse(strings.NewReader(input), Options{
 		Alpha:       0,
 		MinDeltaPct: 0,
-		Mode:        altMode,
+		Mode:        goTestBenchMode,
 		Baseline:    "base",
 		Candidate:   labelCandidate,
 	})
@@ -1159,7 +1211,7 @@ BenchmarkEnhance/group/candidate-10 100 10 ns/op
 		"unexpected outcome")
 }
 
-func TestParseAlternativesModeTradeOff(t *testing.T) {
+func TestParseGoTestBenchModeTradeOff(t *testing.T) {
 	t.Parallel()
 
 	input := `BenchmarkEnhance/original-10 100 10 ns/op 8 B/op
@@ -1170,13 +1222,13 @@ BenchmarkEnhance/original-10 100 10 ns/op 8 B/op
 BenchmarkEnhance/enhanced-10 100 8 ns/op 16 B/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
 	require.NoError(t, err)
 
 	require.Equal(t, TradeOff, report.Verdicts[0].Outcome, "unexpected outcome")
 }
 
-func TestParseAlternativesModeTie(t *testing.T) {
+func TestParseGoTestBenchModeTie(t *testing.T) {
 	t.Parallel()
 
 	input := `BenchmarkEnhance/original-10 100 10 ns/op
@@ -1187,13 +1239,13 @@ BenchmarkEnhance/original-10 100 10 ns/op
 BenchmarkEnhance/enhanced-10 100 10 ns/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
 	require.NoError(t, err)
 
 	require.Equal(t, Tie, report.Verdicts[0].Outcome, "unexpected outcome")
 }
 
-func TestParseAlternativesModeOldWins(t *testing.T) {
+func TestParseGoTestBenchModeOldWins(t *testing.T) {
 	t.Parallel()
 
 	input := `BenchmarkEnhance/original-10 100 8 ns/op
@@ -1204,20 +1256,20 @@ BenchmarkEnhance/original-10 100 8 ns/op
 BenchmarkEnhance/enhanced-10 100 10 ns/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
 	require.NoError(t, err)
 
 	require.Equal(t, OldWins, report.Verdicts[0].Outcome, "unexpected outcome")
 }
 
-func TestParseAlternativesModeMissingBaseline(t *testing.T) {
+func TestParseGoTestBenchModeMissingBaseline(t *testing.T) {
 	t.Parallel()
 
 	input := `BenchmarkEnhance/enhanced-10 100 8 ns/op
 BenchmarkEnhance/enhanced-10 100 8 ns/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1226,14 +1278,14 @@ BenchmarkEnhance/enhanced-10 100 8 ns/op
 	require.Equal(t, "missing-baseline", got.ReasonCode, "unexpected reason code")
 }
 
-func TestParseAlternativesModeMissingCandidate(t *testing.T) {
+func TestParseGoTestBenchModeMissingCandidate(t *testing.T) {
 	t.Parallel()
 
 	input := `BenchmarkEnhance/original-10 100 8 ns/op
 BenchmarkEnhance/original-10 100 8 ns/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1242,14 +1294,14 @@ BenchmarkEnhance/original-10 100 8 ns/op
 	require.Equal(t, "missing-candidate", got.ReasonCode, "unexpected reason code")
 }
 
-func TestParseAlternativesModeInsufficientSamples(t *testing.T) {
+func TestParseGoTestBenchModeInsufficientSamples(t *testing.T) {
 	t.Parallel()
 
 	input := `BenchmarkEnhance/original-10 100 8 ns/op
 BenchmarkEnhance/enhanced-10 100 7 ns/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1258,7 +1310,7 @@ BenchmarkEnhance/enhanced-10 100 7 ns/op
 	require.Equal(t, reasonInsufficient, got.ReasonCode, "unexpected reason code")
 }
 
-func TestParseAlternativesRawSampleBoundaries(t *testing.T) {
+func TestParseGoTestBenchRawSampleBoundaries(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
@@ -1275,7 +1327,7 @@ func TestParseAlternativesRawSampleBoundaries(t *testing.T) {
 		t.Run(fmt.Sprintf("count_%d", test.count), func(t *testing.T) {
 			t.Parallel()
 
-			report, err := Parse(strings.NewReader(rawAlternativeSamples(test.count)), Options{Mode: altMode})
+			report, err := Parse(strings.NewReader(rawGoTestBenchSamples(test.count)), Options{Mode: goTestBenchMode})
 			require.NoError(t, err)
 
 			got := report.Verdicts[0]
@@ -1286,14 +1338,14 @@ func TestParseAlternativesRawSampleBoundaries(t *testing.T) {
 	}
 }
 
-func TestParseAlternativesModeUnsupportedMetric(t *testing.T) {
+func TestParseGoTestBenchModeUnsupportedMetric(t *testing.T) {
 	t.Parallel()
 
 	input := `BenchmarkEnhance/original-10 100 8 MB/s
 BenchmarkEnhance/enhanced-10 100 9 MB/s
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1302,7 +1354,7 @@ BenchmarkEnhance/enhanced-10 100 9 MB/s
 	require.Equal(t, "unsupported-metric", got.ReasonCode, "unexpected reason code")
 }
 
-func TestParseAlternativesModeNoCommonMetric(t *testing.T) {
+func TestParseGoTestBenchModeNoCommonMetric(t *testing.T) {
 	t.Parallel()
 
 	input := `BenchmarkEnhance/original-10 100 8 ns/op
@@ -1311,7 +1363,7 @@ BenchmarkEnhance/original-10 100 8 ns/op
 BenchmarkEnhance/enhanced-10 100 1 allocs/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1320,10 +1372,10 @@ BenchmarkEnhance/enhanced-10 100 1 allocs/op
 	require.Equal(t, "unsupported-metric", got.ReasonCode, "unexpected reason code")
 }
 
-func TestParseAlternativesModeMalformedBenchmark(t *testing.T) {
+func TestParseGoTestBenchModeMalformedBenchmark(t *testing.T) {
 	t.Parallel()
 
-	report, err := Parse(strings.NewReader("BenchmarkEnhance 100 8 ns/op\n"), Options{Mode: altMode})
+	report, err := Parse(strings.NewReader("BenchmarkEnhance 100 8 ns/op\n"), Options{Mode: goTestBenchMode})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1332,10 +1384,10 @@ func TestParseAlternativesModeMalformedBenchmark(t *testing.T) {
 	require.Equal(t, reasonMalformedBenchmark, got.ReasonCode, "unexpected reason code")
 }
 
-func TestParseAlternativesModeMalformedShortRow(t *testing.T) {
+func TestParseGoTestBenchModeMalformedShortRow(t *testing.T) {
 	t.Parallel()
 
-	report, err := Parse(strings.NewReader("BenchmarkEnhance/original-10 100\n"), Options{Mode: altMode})
+	report, err := Parse(strings.NewReader("BenchmarkEnhance/original-10 100\n"), Options{Mode: goTestBenchMode})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1344,10 +1396,10 @@ func TestParseAlternativesModeMalformedShortRow(t *testing.T) {
 	require.Equal(t, reasonMalformedBenchmark, got.ReasonCode, "unexpected reason code")
 }
 
-func TestParseAlternativesModeMalformedIteration(t *testing.T) {
+func TestParseGoTestBenchModeMalformedIteration(t *testing.T) {
 	t.Parallel()
 
-	report, err := Parse(strings.NewReader("BenchmarkEnhance/original-10 nope 8 ns/op\n"), Options{Mode: altMode})
+	report, err := Parse(strings.NewReader("BenchmarkEnhance/original-10 nope 8 ns/op\n"), Options{Mode: goTestBenchMode})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1356,12 +1408,12 @@ func TestParseAlternativesModeMalformedIteration(t *testing.T) {
 	require.Equal(t, reasonMalformedBenchmark, got.ReasonCode, "unexpected reason code")
 }
 
-func TestParseAlternativesModeMalformedSupportedMetricValue(t *testing.T) {
+func TestParseGoTestBenchModeMalformedSupportedMetricValue(t *testing.T) {
 	t.Parallel()
 
 	report, err := Parse(
 		strings.NewReader("BenchmarkEnhance/original-10 100 nope ns/op\n"),
-		Options{Mode: altMode},
+		Options{Mode: goTestBenchMode},
 	)
 	require.NoError(t, err)
 
@@ -1387,10 +1439,10 @@ func TestCompareRawFilesMalformedSupportedMetricValue(t *testing.T) {
 	require.Equal(t, reasonMalformedBenchmark, got.ReasonCode, "unexpected reason code")
 }
 
-func TestParseAlternativesModeNoBenchmarkRows(t *testing.T) {
+func TestParseGoTestBenchModeNoBenchmarkRows(t *testing.T) {
 	t.Parallel()
 
-	report, err := Parse(strings.NewReader("PASS\n"), Options{Mode: altMode})
+	report, err := Parse(strings.NewReader("PASS\n"), Options{Mode: goTestBenchMode})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1399,17 +1451,17 @@ func TestParseAlternativesModeNoBenchmarkRows(t *testing.T) {
 	require.Equal(t, reasonMalformedBenchmark, got.ReasonCode, "unexpected reason code")
 }
 
-func TestParseAlternativesModeSkipsUnrequestedLabels(t *testing.T) {
+func TestParseGoTestBenchModeSkipsUnrequestedLabels(t *testing.T) {
 	t.Parallel()
 
-	input := rawAltInput + "BenchmarkEnhance/control-10 100 1 ns/op\n"
+	input := rawGoTestBenchInput + "BenchmarkEnhance/control-10 100 1 ns/op\n"
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
 	require.NoError(t, err)
 	require.Equal(t, NewWins, report.Verdicts[0].Outcome, "unexpected outcome")
 }
 
-func TestParseAlternativesModeSortsMixedVerdicts(t *testing.T) {
+func TestParseGoTestBenchModeSortsMixedVerdicts(t *testing.T) {
 	t.Parallel()
 
 	input := `BenchmarkZ/original-10 100 10 ns/op
@@ -1423,7 +1475,7 @@ BenchmarkA/original-10 100 10 ns/op
 BenchmarkA/original-10 100 10 ns/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: altMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
 	require.NoError(t, err)
 
 	require.Equal(t, "BenchmarkA", report.Verdicts[0].Benchmark,
@@ -1464,7 +1516,7 @@ func TestCommonMetricsOrdersMapKeys(t *testing.T) {
 		"common metrics should sort map keys deterministically")
 }
 
-func TestParseAlternativesModeVariableSamplesUsePValueApproximation(t *testing.T) {
+func TestParseGoTestBenchModeVariableSamplesUsePValueApproximation(t *testing.T) {
 	t.Parallel()
 
 	input := `BenchmarkEnhance/original-10 100 10 ns/op
@@ -1474,7 +1526,7 @@ BenchmarkEnhance/enhanced-10 100 9 ns/op
 BenchmarkEnhance/original-10 100 11 ns/op
 BenchmarkEnhance/enhanced-10 100 8.5 ns/op
 `
-	report, err := Parse(strings.NewReader(input), Options{Mode: altMode, Alpha: 1})
+	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode, Alpha: 1})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0].Metrics[0].PValue
@@ -1497,15 +1549,15 @@ func TestPrivateAlternativeMathBranches(t *testing.T) {
 func TestPrivateAlternativeEmptyReportBranches(t *testing.T) {
 	t.Parallel()
 
-	unsupportedState := rawbench.Alternatives{HasUnsupportedRows: true}
+	unsupportedState := rawbench.GoTestBench{HasUnsupportedRows: true}
 
-	got := emptyAlternativeReport(unsupportedState)
+	got := emptyGoTestBenchReport(unsupportedState)
 	require.Equal(t, reasonUnsupported, got.Verdicts[0].ReasonCode,
 		"report reason code should indicate unsupported metrics when state has unsupported rows")
 
-	emptyState := rawbench.Alternatives{}
+	emptyState := rawbench.GoTestBench{}
 
-	got = emptyAlternativeReport(emptyState)
+	got = emptyGoTestBenchReport(emptyState)
 	require.Equal(t, reasonMalformedBenchmark, got.Verdicts[0].ReasonCode,
 		"report reason code should indicate malformed benchmark when state is empty")
 }

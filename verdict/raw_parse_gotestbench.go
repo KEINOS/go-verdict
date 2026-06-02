@@ -6,10 +6,10 @@ import (
 	"github.com/KEINOS/go-verdict/verdict/internal/benchparser/rawbench"
 )
 
-func parseAlternatives(input string, opts Options) (Report, error) {
-	state, err := rawbench.ParseAlternatives(input)
+func parseGoTestBench(input string, opts Options) (Report, error) {
+	state, err := rawbench.ParseGoTestBench(input)
 	if err != nil {
-		return Report{}, fmt.Errorf("parsing raw alternatives input: %w", err)
+		return Report{}, fmt.Errorf("parsing raw go test -bench input: %w", err)
 	}
 
 	if !state.HasBenchmarkRows {
@@ -18,9 +18,9 @@ func parseAlternatives(input string, opts Options) (Report, error) {
 
 	// Parsing only records raw samples and input-shape flags. Evaluation below
 	// selects labels, checks sample counts, and applies shared verdict rules.
-	report := evaluateAlternatives(state, opts)
+	report := evaluateGoTestBench(state, opts)
 	if len(report.Verdicts) == 0 {
-		return emptyAlternativeReport(state), nil
+		return emptyGoTestBenchReport(state), nil
 	}
 
 	return report, nil

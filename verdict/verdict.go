@@ -48,13 +48,13 @@ const (
 // and greater than 0 and at most 1. MinDeltaPct defaults to 0 and must be
 // finite and non-negative.
 //
-// Mode accepts "", "auto", "benchstat", or "alternatives". Empty mode is the
+// Mode accepts "", "auto", "benchstat", or "gotestbench". Empty mode is the
 // same as "auto": Parse detects raw go test benchmark rows when possible and
 // otherwise parses benchstat text or CSV input. "benchstat" disables raw input
-// detection. "alternatives" reads raw go test benchmark rows from stdin.
+// detection. "gotestbench" reads raw go test benchmark rows from stdin.
 //
-// Baseline and Candidate select raw alternatives labels. In "alternatives"
-// mode, empty labels default to "original" and "enhanced". In "auto" mode,
+// Baseline and Candidate select raw go test -bench sub-benchmark labels. In
+// "gotestbench" mode, empty labels default to "original" and "enhanced". In "auto" mode,
 // empty labels allow Parse to prefer an original/enhanced pair when present or
 // infer the only two labels under a parent benchmark. CompareRawFiles ignores
 // Mode, Baseline, and Candidate because its labels come from the two files.
@@ -115,7 +115,7 @@ const (
 	fallbackBaselineLabel  = "old"
 	fallbackCandidateLabel = "new"
 	modeAuto               = "auto"
-	modeAlternatives       = "alternatives"
+	modeGoTestBench        = "gotestbench"
 	modeBenchstat          = "benchstat"
 )
 
@@ -130,7 +130,7 @@ var (
 func Parse(reader io.Reader, opts Options) (Report, error) {
 	opts = normalizeOptions(opts)
 
-	err := validateOptions(opts)
+	err := validateParseOptions(opts)
 	if err != nil {
 		return Report{}, err
 	}
@@ -143,13 +143,13 @@ func Parse(reader io.Reader, opts Options) (Report, error) {
 	text := string(input)
 
 	switch opts.Mode {
-	case modeAlternatives:
-		return parseAlternatives(text, opts)
+	case modeGoTestBench:
+		return parseGoTestBench(text, opts)
 	case modeBenchstat:
 		return parseBenchstat(text, opts)
 	default:
-		if rawbench.LooksLikeAlternatives(text) {
-			return parseAlternatives(text, opts)
+		if rawbench.LooksLikeGoTestBench(text) {
+			return parseGoTestBench(text, opts)
 		}
 
 		return parseBenchstat(text, opts)
@@ -223,7 +223,7 @@ func benchstatComparisons(rows []benchparser.Comparison, opts Options) []Compari
 // NewOptions returns default options for callers that prefer explicit setup.
 // The zero value Options{} is also valid and uses the same defaults.
 // Baseline and Candidate stay empty so auto mode can infer raw benchmark
-// labels; alternatives mode fills original/enhanced defaults when unset.
+// labels; gotestbench mode fills original/enhanced defaults when unset.
 func NewOptions() Options {
 	return Options{
 		Alpha:       defaultAlpha,
@@ -243,11 +243,11 @@ func normalizeOptions(opts Options) Options {
 		opts.Mode = modeAuto
 	}
 
-	if opts.Mode == modeAlternatives && opts.Baseline == "" {
+	if opts.Mode == modeGoTestBench && opts.Baseline == "" {
 		opts.Baseline = defaultBaseline
 	}
 
-	if opts.Mode == modeAlternatives && opts.Candidate == "" {
+	if opts.Mode == modeGoTestBench && opts.Candidate == "" {
 		opts.Candidate = defaultCandidate
 	}
 
@@ -262,5 +262,19 @@ func validateOptions(opts Options) error {
 		return fmt.Errorf("%w: min-delta must be finite and non-negative", errInvalidOptions)
 	default:
 		return nil
+	}
+}
+
+func validateParseOptions(opts Options) error {
+	err := validateOptions(opts)
+	if err != nil {
+		return err
+	}
+
+	switch opts.Mode {
+	case modeAuto, modeBenchstat, modeGoTestBench:
+		return nil
+	default:
+		return fmt.Errorf("%w: unknown mode %q", errInvalidOptions, opts.Mode)
 	}
 }
