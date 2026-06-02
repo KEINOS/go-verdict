@@ -1,35 +1,44 @@
 # Contributing
 
-Thanks for improving `go-verdict`. This project is intentionally small, so the safest changes are usually narrow ones that keep parser behavior, evaluation rules, fixtures, and documentation in sync.
+Thanks for improving `go-verdict`. Keep changes small. When behavior changes, update tests, fixtures, and documentation together.
 
-## Repository Assumptions
+## Contents
 
-Run project commands from the repository root. The Makefile, Markdown lint configuration, fixture paths, and end-to-end checks assume the current working directory contains `go.mod`, `Makefile`, and `.markdownlint-cli2.yaml`.
+- [Before You Start](#before-you-start)
+- [Development Commands](#development-commands)
+- [End-to-End Checks](#end-to-end-checks)
+- [Benchmark Fixtures](#benchmark-fixtures)
+- [Architecture And Layout](#architecture-and-layout)
+- [Error Message Style](#error-message-style)
+- [Adding An Input Or Output Format](#adding-an-input-or-output-format)
+- [Markdown](#markdown)
 
-Keep this guide at the repository root for now so contributor workflow notes stay visible beside `README.md`, `Makefile`, and `go.mod`. Reconsider a `.github/` location only if the project grows enough to need dedicated governance documentation.
+## Before You Start
 
-Start by checking the worktree:
+Run commands from the repository root. The project tools expect to find `go.mod`, `Makefile`, and `.markdownlint-cli2.yaml` in the current directory.
+
+Check the worktree before editing:
 
 ```sh
 git status --short
 ```
 
-Avoid overwriting unrelated local changes. If a fixture, generated file, or documentation file is already modified, understand whether it belongs to your change before editing it.
+Do not overwrite unrelated local changes. Review existing changes before editing a modified file.
 
-## Safe Development Workflow
+## Development Commands
 
-When running these commands, do so from the repository root so the project configuration is applied.
-
-- `go test ./...`: Use focused checks while iterating.
-- `make test`: Run the full race and coverage test target before larger changes.
-- `make lint`: Run lint only when you are ready for mutating fixers. It runs `go fix`, `golangci-lint --fix`, and `markdownlint-cli2 --fix`. It can rewrite Go and Markdown files.
-- `make build`: Build the local CLI. It removes `./dist` first, then writes `./dist/verdict`. This keeps repeated E2E runs from failing when a stale `./dist/verdict` binary already exists.
-- `make check`: Run all validation gates. It runs `make test`, `make lint`, and `make e2e`.
-- `make help`: See all available development targets.
+- `go test ./...`: Run focused tests while iterating.
+- `make test`: Run all tests with the race detector and coverage.
+- `make lint`: Run mutating fixers. It may rewrite Go and Markdown files.
+- `make build`: Remove `./dist`, then build `./dist/verdict`.
+- `make check`: Run `make test`, `make lint`, and `make e2e`.
+- `make help`: List development targets.
 
 ## End-to-End Checks
 
-The E2E targets build `./dist/verdict`, generate or use files in `testdata/`, and assert the command output with `grep`.
+The E2E tests build the `verdict` CLI and check its output using files in `testdata/` (benchmark fixtures).
+
+Use the E2E target that matches your change:
 
 ```sh
 make e2e
@@ -39,94 +48,87 @@ make e2e-ab
 make e2e-insufficient
 ```
 
-Use the focused E2E target that matches your change. For example, raw gotestbench changes usually need `make e2e-gotestbench`, while explicit raw
-file comparison changes usually need `make e2e-ab`.
-
-For a fully clean E2E pass, use:
+For a clean E2E run, use:
 
 ```sh
 make clean-all && make e2e
 ```
 
-## Fixture Regeneration
+## Benchmark Fixtures
 
-`make data` regenerates benchmark fixtures under `testdata/`:
+Regenerate benchmark fixtures only when benchmark examples, fixture formats, or E2E expectations change, or when fixtures are not present in `testdata/`.
 
 ```sh
 make data
 ```
 
-Only regenerate fixtures when benchmark examples, fixture shape, or E2E expectations intentionally change. Benchmark data contains normal measurement variance, so regenerated files can differ even when behavior did not change.
+Benchmark results include normal measurement variance (acceptable variations in the values). Review fixture diffs before committing them.
 
-Review fixture diffs carefully before committing them.
-
-Cleanup targets are split by artifact type:
+Cleanup targets:
 
 ```sh
 make clean-dist      # remove ./dist
 make clean-testdata  # remove generated testdata/*.txt files
-make clean-all       # remove both generated fixture files and ./dist
+make clean-all       # remove both
 ```
 
-## Architecture Overview
+## Architecture And Layout
 
-`go-verdict` has three input paths that converge on the same verdict evaluation and output writers:
+1. All input paths create `Comparison` rows.
+2. The shared evaluator in `verdict/` turns them into a `Report`.
+3. `Report` methods write text, verbose text, and JSON output.
 
-1. Benchstat stdin: `verdict.Parse` reads `benchstat` text or CSV output, parsed by `verdict/internal/benchparser/benchstat/benchstat.go`.
-2. Raw go test -bench stdin: auto mode recognizes repeated `go test -bench` rows such as `BenchmarkName/original` and `BenchmarkName/enhanced`, parsed by `verdict/internal/benchparser/rawbench/rawbench.go`.
-3. Raw-file A/B comparison: the CLI `-a` and `-b` flags call `verdict.CompareRawFiles`, with raw input parsed by `verdict/internal/benchparser/rawbench/rawbench.go`, for two separate raw benchmark files.
+Supported input paths:
 
-All paths produce `Comparison` rows and then use the shared evaluator in the `verdict` package to produce a `Report`. Text, verbose text, and JSON output are written by methods on `Report`.
+1. Benchstat stdin: `verdict.Parse` reads benchstat text or CSV.
+2. Raw `go test -bench` stdin: `auto` mode (default) reads repeated sub-benchmarks such as `BenchmarkName/original` and `BenchmarkName/enhanced`.
+3. Raw-file A/B comparison: CLI flags `-a` and `-b` call `verdict.CompareRawFiles`.
 
-The CLI lives in `cmd/verdict/`. The public library API lives in `verdict/`.
-The embedded AI Agent skill text lives in `cmd/verdict/internal/skill/`.
-
-## Project Layout
+Project layout:
 
 ```text
-cmd/verdict/                 CLI entry point
-cmd/verdict/internal/skill/  Embedded AI Agent skill text
-verdict/                     Public facade, evaluator, and output writer
-verdict/internal/benchparser/  Neutral benchmark input decoders
-testdata/                    Demo benchmarks and generated fixture files
-Makefile                     Fixture and end-to-end commands
+cmd/verdict/                   CLI entry point
+cmd/verdict/internal/skill/    Embedded AI Agent skill text
+verdict/                       Public API, evaluator, and output writer
+verdict/internal/benchparser/  Benchmark input decoders
+testdata/                      Demo benchmarks and generated fixtures
+Makefile                       Fixture/jig and E2E commands
 ```
 
 ## Error Message Style
 
-Keep user-facing errors actionable and specific. Existing patterns distinguish library reports from CLI errors:
+Keep user-facing errors specific and actionable.
 
 - Library reports may return `inconclusive` with a `ReasonCode`.
-- The CLI turns selected cases into direct errors when the user needs to take
-  action, such as benchmark-set mismatch or insufficient raw samples.
-- Insufficient-sample guidance should mention the minimum accepted sample count
-  and recommend `-count=10` or more.
-- Benchmark-set mismatch guidance should point users to `verdict -a` and `-b`
-  when they are comparing different benchmark functions.
+- The CLI returns direct errors when the user must take action, such as benchmark-set mismatch or insufficient raw samples.
+- Insufficient-sample errors should state the minimum sample count and recommend `-count=10` or more.
+- Benchmark-set mismatch errors should point users to `verdict -a` and `-b` for different benchmark functions.
 
-Do not broaden error-message behavior casually. Add or adjust tests whenever the user-visible message or reason code changes.
+Update tests when a user-facing message or reason code changes.
 
 ## Adding An Input Or Output Format
 
-Use this checklist when extending what `verdict` can read or write:
+When adding a format:
 
-- Decide whether the new format is benchstat-like, raw-benchmark-like, or a separate parser path.
-- Add neutral decoder code under `verdict/internal/benchparser` without changing existing mode behavior unless the new format is intentionally part of auto detection.
-- Convert decoded data into `Comparison` rows in the `verdict` package so shared verdict evaluation still owns thresholds, statistics, `Direction`, `Outcome`, `Reason`, and winner selection.
-- Update CLI mode or format validation in `cmd/verdict/` if users need a new flag value.
-- Add unit tests for parser success, malformed input, unsupported metrics, and inconclusive cases.
-- Add or update E2E coverage when the CLI workflow changes.
-- Update README usage, CLI option text, and this contributor guide.
-- Regenerate fixtures only when fixture contents are intentionally part of the change.
-- Run Markdown lint on changed Markdown files from the repository root.
-- If Makefile targets, validation commands, or generated artifact paths change, update `make help` and this contributor guide in the same phase.
+- Choose an existing parser path or add a separate path under `verdict/internal/benchparser/`. Keep existing mode behavior unless the new format is intentionally part of auto-detection.
+- Keep shared thresholds, statistics, outcomes, reasons, and winner selection in the `verdict` package.
+- Update CLI validation in `cmd/verdict/` when users need a new flag value.
+- Add unit tests for valid input, malformed input, unsupported metrics, and inconclusive cases.
+- Add or update E2E checks when the CLI workflow changes.
+- Update README files, CLI option text, and this guide when needed.
+- Regenerate fixtures only when fixture contents must change.
+- Update `make help` and this guide when Makefile targets or generated paths change.
 
 ## Markdown
 
-After Markdown edits, run:
+After editing Markdown, lint only the files you changed when possible:
 
 ```sh
-markdownlint-cli2 --fix README.md README_CLI.md README_LIB.md README_WORKFLOWS.md CONTRIBUTING.md
+markdownlint-cli2 --fix CONTRIBUTING.md
 ```
 
-Limit the file list to the Markdown files you changed when possible. This keeps unrelated documentation churn out of the patch.
+### No Soft Break
+
+Avoid soft breaks inside prose sentences and list items. Soft breaks can change the rendered layout.
+
+If a raw Markdown line feels too long, shorten the sentence instead of wrapping it.
