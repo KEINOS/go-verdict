@@ -1,4 +1,4 @@
-package main
+package benchtargets
 
 import (
 	"testing"
@@ -7,42 +7,48 @@ import (
 )
 
 func TestExampleSlow(t *testing.T) {
-	require.True(t, ExampleSlow(),
-		"ExampleSlow() should return true")
+	t.Parallel()
+
+	require.True(t, exampleSlow(),
+		"exampleSlow() should return true")
 }
 
 func TestExampleFast(t *testing.T) {
-	require.True(t, ExampleFast(),
-		"ExampleFast() should return true")
+	t.Parallel()
+
+	require.True(t, exampleFast(),
+		"exampleFast() should return true")
 }
 
 func TestExampleOriginal(t *testing.T) {
-	require.Equal(t, ExampleOriginal(), ExampleEnhanced(),
-		"ExampleOriginal() should match ExampleEnhanced()")
+	t.Parallel()
+
+	require.Equal(t, exampleOriginal(), exampleEnhanced(),
+		"exampleOriginal() should match exampleEnhanced()")
 }
 
 func BenchmarkExampleSlow(b *testing.B) {
 	for b.Loop() {
-		ExampleSlow()
+		exampleSlow()
 	}
 }
 
 func BenchmarkExampleFast(b *testing.B) {
 	for b.Loop() {
-		ExampleFast()
+		exampleFast()
 	}
 }
 
 func BenchmarkEnhance(b *testing.B) {
 	b.Run("original", func(b *testing.B) {
 		for b.Loop() {
-			ExampleOriginal()
+			exampleOriginal()
 		}
 	})
 
 	b.Run("enhanced", func(b *testing.B) {
 		for b.Loop() {
-			ExampleEnhanced()
+			exampleEnhanced()
 		}
 	})
 }

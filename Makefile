@@ -49,26 +49,26 @@ data: data-example-mismatch data-benchstat-repeat-fast data-gotestbench
 
 data-example-mismatch:
 	@printf '\n== Generate example fixture: different benchmark names, useful for mismatch examples ==\n'
-	go test -bench=BenchmarkExampleFast -count=10 ./testdata | tee ./testdata/bench_ExampleFast.txt
-	go test -bench=BenchmarkExampleSlow -count=10 ./testdata | tee ./testdata/bench_ExampleSlow.txt
+	go test -bench=BenchmarkExampleFast -count=10 ./testdata/benchtargets | tee ./testdata/bench_ExampleFast.txt
+	go test -bench=BenchmarkExampleSlow -count=10 ./testdata/benchtargets | tee ./testdata/bench_ExampleSlow.txt
 	benchstat ./testdata/bench_ExampleFast.txt ./testdata/bench_ExampleSlow.txt > ./testdata/benchstat_Example.txt
 
 data-benchstat-repeat-fast:
 	@printf '\n== Generate benchstat E2E fixture: repeat BenchmarkExampleFast as old/new, with no intentional implementation difference ==\n'
-	go test -run='^$$' -bench=BenchmarkExampleFast -count=12 ./testdata > ./testdata/bench_old.txt
-	go test -run='^$$' -bench=BenchmarkExampleFast -count=12 ./testdata > ./testdata/bench_new.txt
+	go test -run='^$$' -bench=BenchmarkExampleFast -count=12 ./testdata/benchtargets > ./testdata/bench_old.txt
+	go test -run='^$$' -bench=BenchmarkExampleFast -count=12 ./testdata/benchtargets > ./testdata/bench_new.txt
 	benchstat ./testdata/bench_old.txt ./testdata/bench_new.txt > ./testdata/benchstat_E2E.txt
 
 data-gotestbench:
 	@printf '\n== Generate gotestbench E2E fixture: BenchmarkEnhance/original vs BenchmarkEnhance/enhanced ==\n'
-	go test -run='^$$' -bench=BenchmarkEnhance -benchmem -count=8 ./testdata > ./testdata/bench_gotestbench.txt
+	go test -run='^$$' -bench=BenchmarkEnhance -benchmem -count=8 ./testdata/benchtargets > ./testdata/bench_gotestbench.txt
 
 e2e: e2e-readme-pipelines e2e-benchstat e2e-gotestbench e2e-ab e2e-insufficient
 
 e2e-readme-pipelines: build data-benchstat-repeat-fast
 	@printf '\n== Run README pipeline E2E: literal pipeline examples from the README opening ==\n'
 	benchstat ./testdata/bench_old.txt ./testdata/bench_new.txt | $(VERDICT) | tee ./testdata/verdict_readme_benchstat_pipeline_E2E.txt
-	go test -run='^$$' -bench=BenchmarkEnhance -benchmem -count=8 ./testdata | $(VERDICT) | tee ./testdata/verdict_readme_gotestbench_pipeline_E2E.txt
+	go test -run='^$$' -bench=BenchmarkEnhance -benchmem -count=8 ./testdata/benchtargets | $(VERDICT) | tee ./testdata/verdict_readme_gotestbench_pipeline_E2E.txt
 	grep -Eq 'ExampleFast-10: (tie|bench_(old|new)\.txt wins)' ./testdata/verdict_readme_benchstat_pipeline_E2E.txt
 	grep -q 'BenchmarkEnhance: enhanced wins' ./testdata/verdict_readme_gotestbench_pipeline_E2E.txt
 
@@ -100,7 +100,7 @@ e2e-ab: build data-example-mismatch
 
 e2e-insufficient: build
 	@printf '\n== Run insufficient raw samples E2E: count=2 asks for more samples ==\n'
-	go test -run='^$$' -bench=BenchmarkEnhance -benchmem -count=2 ./testdata > ./testdata/bench_gotestbench_count2.txt
+	go test -run='^$$' -bench=BenchmarkEnhance -benchmem -count=2 ./testdata/benchtargets > ./testdata/bench_gotestbench_count2.txt
 	! $(VERDICT) < ./testdata/bench_gotestbench_count2.txt 2> ./testdata/verdict_insufficient_error_E2E.txt
 	grep -q 'insufficient samples' ./testdata/verdict_insufficient_error_E2E.txt
 	grep -q 'at least 3 samples' ./testdata/verdict_insufficient_error_E2E.txt
