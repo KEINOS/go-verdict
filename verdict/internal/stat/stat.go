@@ -1,10 +1,12 @@
-package verdict
+// Package stat provides internal statistical helpers for raw benchmark comparisons.
+package stat
 
 import "math"
 
 const percentScale = 100
 
-func mean(values []float64) float64 {
+// Mean returns the arithmetic mean of values.
+func Mean(values []float64) float64 {
 	// Callers enforce non-empty sample sets before statistical comparison.
 	total := 0.0
 	for _, value := range values {
@@ -14,8 +16,9 @@ func mean(values []float64) float64 {
 	return total / float64(len(values))
 }
 
-func variance(values []float64, sampleMean float64) float64 {
-	if len(values) < StatisticalMinSamples {
+// Variance returns the sample variance for values.
+func Variance(values []float64, sampleMean float64, minSamples int) float64 {
+	if len(values) < minSamples {
 		return 0
 	}
 
@@ -29,7 +32,8 @@ func variance(values []float64, sampleMean float64) float64 {
 	return sum / float64(len(values)-1)
 }
 
-func deltaPercent(baselineMean, candidateMean float64) float64 {
+// DeltaPercent returns the candidate change relative to the baseline mean.
+func DeltaPercent(baselineMean, candidateMean float64) float64 {
 	if baselineMean == 0 {
 		return 0
 	}
@@ -37,14 +41,14 @@ func deltaPercent(baselineMean, candidateMean float64) float64 {
 	return ((candidateMean - baselineMean) / baselineMean) * percentScale
 }
 
-// pValueApproximation uses a pragmatic normal approximation from repeated
+// PValueApproximation uses a pragmatic normal approximation from repeated
 // samples instead of a heavier statistics dependency. It is most useful with
 // the recommended raw sample count or more.
-func pValueApproximation(baseline, candidate []float64) float64 {
-	baselineMean := mean(baseline)
-	candidateMean := mean(candidate)
-	baselineVariance := variance(baseline, baselineMean)
-	candidateVariance := variance(candidate, candidateMean)
+func PValueApproximation(baseline, candidate []float64, minSamples int) float64 {
+	baselineMean := Mean(baseline)
+	candidateMean := Mean(candidate)
+	baselineVariance := Variance(baseline, baselineMean, minSamples)
+	candidateVariance := Variance(candidate, candidateMean, minSamples)
 	standardError := math.Sqrt(
 		baselineVariance/float64(len(baseline)) +
 			candidateVariance/float64(len(candidate)),

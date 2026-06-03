@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/KEINOS/go-verdict/verdict/internal/benchparser/rawbench"
+	"github.com/KEINOS/go-verdict/verdict/internal/stat"
 )
 
 const requiredAlternativePair = 2
@@ -216,10 +217,10 @@ func compareAlternativeMetric(
 	candidate []float64,
 	opts Options,
 ) Comparison {
-	baselineMean := mean(baseline)
-	candidateMean := mean(candidate)
-	delta := deltaPercent(baselineMean, candidateMean)
-	pValue := pValueApproximation(baseline, candidate)
+	baselineMean := stat.Mean(baseline)
+	candidateMean := stat.Mean(candidate)
+	delta := stat.DeltaPercent(baselineMean, candidateMean)
+	pValue := stat.PValueApproximation(baseline, candidate, StatisticalMinSamples)
 	significant := pValue <= opts.Alpha && math.Abs(delta) >= opts.MinDeltaPct
 
 	return Comparison{

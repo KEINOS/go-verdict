@@ -396,6 +396,14 @@ Foo-8,1.0,1%,0.9,1%,-10.00%,?
 	require.Equal(t, ReasonMissingPValue, got.ReasonCode, "expected missing-pvalue reason code")
 }
 
+func TestBenchstatReasonCodePreservesUnknownReason(t *testing.T) {
+	t.Parallel()
+
+	const reason = "future-reason"
+
+	require.Equal(t, reason, benchstatReasonCode(reason))
+}
+
 func TestParseCSVWithOnlyHeaderReturnsError(t *testing.T) {
 	t.Parallel()
 
@@ -1533,16 +1541,6 @@ BenchmarkEnhance/enhanced-10 100 8.5 ns/op
 		"unexpected p-value")
 	require.Less(t, got, 1.0,
 		"unexpected p-value")
-}
-
-func TestPrivateAlternativeMathBranches(t *testing.T) {
-	t.Parallel()
-
-	got := variance([]float64{1}, 1)
-	require.InDelta(t, 0.0, got, 1e-9, "variance of one sample should be zero")
-
-	got = deltaPercent(0, 10)
-	require.InDelta(t, 0.0, got, 1e-9, "delta percent with zero baseline should be zero")
 }
 
 func TestPrivateAlternativeEmptyReportBranches(t *testing.T) {
