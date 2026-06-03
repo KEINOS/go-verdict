@@ -39,11 +39,11 @@ func compareRawFiles(aReader io.Reader, bReader io.Reader, opts Options) (Report
 		opts,
 	)
 	if !ok {
-		return Report{Verdicts: []BenchmarkVerdict{*alternativeInconclusive(benchmark, "insufficient-samples")}}, nil
+		return Report{Verdicts: []BenchmarkVerdict{*alternativeInconclusive(benchmark, ReasonInsufficientSamples)}}, nil
 	}
 
 	if len(rows) == 0 {
-		return Report{Verdicts: []BenchmarkVerdict{*alternativeInconclusive(benchmark, "unsupported-metric")}}, nil
+		return Report{Verdicts: []BenchmarkVerdict{*alternativeInconclusive(benchmark, ReasonUnsupportedMetric)}}, nil
 	}
 
 	return evaluate(rows), nil
@@ -52,13 +52,13 @@ func compareRawFiles(aReader io.Reader, bReader io.Reader, opts Options) (Report
 func rawFileInconclusive(aState, bState rawbench.File) *BenchmarkVerdict {
 	switch {
 	case !aState.HasBenchmarkRows || !bState.HasBenchmarkRows:
-		return alternativeInconclusive("all", "malformed-benchmark")
+		return alternativeInconclusive("all", ReasonMalformedBenchmark)
 	case aState.HasMalformedRows || bState.HasMalformedRows:
-		return alternativeInconclusive("all", "malformed-benchmark")
+		return alternativeInconclusive("all", ReasonMalformedBenchmark)
 	case aState.HasMultipleSeries || bState.HasMultipleSeries:
-		return alternativeInconclusive("all", "ambiguous-benchmark")
+		return alternativeInconclusive("all", ReasonAmbiguousBenchmark)
 	case aState.HasUnsupportedRows || bState.HasUnsupportedRows:
-		return alternativeInconclusive("all", "unsupported-metric")
+		return alternativeInconclusive("all", ReasonUnsupportedMetric)
 	default:
 		return nil
 	}
@@ -111,7 +111,7 @@ func evaluateAlternativeParent(
 
 	baselineLabel, candidateLabel, ok := selectAlternativeLabels(labels, opts)
 	if !ok {
-		return nil, alternativeInconclusive(parent, "ambiguous-labels")
+		return nil, alternativeInconclusive(parent, ReasonAmbiguousLabels)
 	}
 
 	baselineMetrics, hasBaseline := labels[baselineLabel]
@@ -119,18 +119,18 @@ func evaluateAlternativeParent(
 
 	switch {
 	case !hasBaseline:
-		return nil, alternativeInconclusive(parent, "missing-baseline")
+		return nil, alternativeInconclusive(parent, ReasonMissingBaseline)
 	case !hasCandidate:
-		return nil, alternativeInconclusive(parent, "missing-candidate")
+		return nil, alternativeInconclusive(parent, ReasonMissingCandidate)
 	}
 
 	rows, ok := compareAlternativeMetrics(parent, baselineLabel, candidateLabel, baselineMetrics, candidateMetrics, opts)
 	if !ok {
-		return nil, alternativeInconclusive(parent, "insufficient-samples")
+		return nil, alternativeInconclusive(parent, ReasonInsufficientSamples)
 	}
 
 	if len(rows) == 0 {
-		return nil, alternativeInconclusive(parent, "unsupported-metric")
+		return nil, alternativeInconclusive(parent, ReasonUnsupportedMetric)
 	}
 
 	return rows, nil
@@ -250,10 +250,10 @@ func alternativeInconclusive(parent, reason string) *BenchmarkVerdict {
 func emptyGoTestBenchReport(state rawbench.GoTestBench) Report {
 	switch {
 	case state.HasMalformedRows:
-		return inconclusiveReport("malformed-benchmark")
+		return inconclusiveReport(ReasonMalformedBenchmark)
 	case state.HasUnsupportedRows:
-		return inconclusiveReport("unsupported-metric")
+		return inconclusiveReport(ReasonUnsupportedMetric)
 	default:
-		return inconclusiveReport("malformed-benchmark")
+		return inconclusiveReport(ReasonMalformedBenchmark)
 	}
 }

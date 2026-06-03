@@ -13,7 +13,7 @@ func parseGoTestBench(input string, opts Options) (Report, error) {
 	}
 
 	if !state.HasBenchmarkRows {
-		return inconclusiveReport("malformed-benchmark"), nil
+		return inconclusiveReport(ReasonMalformedBenchmark), nil
 	}
 
 	// Parsing only records raw samples and input-shape flags. Evaluation below

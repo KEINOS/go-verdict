@@ -4,6 +4,7 @@
 .vscode
 .antigravitycli
 .agent-notes/
+cache/
 
 # Exclude artifacts
 *.txt

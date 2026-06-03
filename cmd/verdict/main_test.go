@@ -501,8 +501,8 @@ func TestReportErrorBranches(t *testing.T) {
 		"non-mapped reason code should not return error")
 
 	tests := map[string]error{
-		"benchmark-set-mismatch": errBenchmarkSetMismatch,
-		"insufficient-samples":   errInsufficientSamples,
+		verdict.ReasonBenchmarkSetMismatch: errBenchmarkSetMismatch,
+		verdict.ReasonInsufficientSamples:  errInsufficientSamples,
 	}
 
 	for _, handler := range reasonCodeErrorHandlers() {

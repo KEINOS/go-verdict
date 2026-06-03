@@ -87,6 +87,18 @@ for _, item := range report.Verdicts {
 }
 ```
 
+## Use Inconclusive Reason Codes
+
+`BenchmarkVerdict.ReasonCode` is a string so future versions can add reason codes without changing the report type. For known reason codes, use the public constants:
+
+```go
+for _, item := range report.Verdicts {
+  if item.Outcome == verdict.Inconclusive && item.ReasonCode == verdict.ReasonInsufficientSamples {
+    os.Exit(1)
+  }
+}
+```
+
 ## Related Documentation
 
 - [go-verdict](README.md): installation and complete CLI help.

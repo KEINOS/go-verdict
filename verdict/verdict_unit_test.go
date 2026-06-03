@@ -28,9 +28,9 @@ const (
 	optionMinDeltaName       = "min-delta"
 	reasonMixed              = "mixed result"
 	reasonSame               = "same"
-	reasonMalformedBenchmark = "malformed-benchmark"
-	reasonInsufficient       = "insufficient-samples"
-	reasonUnsupported        = "unsupported-metric"
+	reasonMalformedBenchmark = ReasonMalformedBenchmark
+	reasonInsufficient       = ReasonInsufficientSamples
+	reasonUnsupported        = ReasonUnsupportedMetric
 	rawGoTestBenchInput      = "BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
 		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n" +
 		"BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
@@ -134,7 +134,7 @@ Foo-8          1.00n      1.10n
 		"unexpected verdict count, expected exactly one verdict when one benchmark is present")
 	require.Equal(t, Inconclusive, report.Verdicts[0].Outcome,
 		"unexpected outcome, expected inconclusive when p-value is missing")
-	require.Equal(t, "missing-pvalue", report.Verdicts[0].ReasonCode,
+	require.Equal(t, ReasonMissingPValue, report.Verdicts[0].ReasonCode,
 		"unexpected reason code, expected 'missing-pvalue' when p-value is missing")
 }
 
@@ -376,7 +376,7 @@ Foo-8,,1%,,1%,?,?
 	got := report.Verdicts[0]
 
 	require.Equal(t, Inconclusive, got.Outcome, "expected inconclusive outcome")
-	require.Equal(t, "benchmark-set-mismatch", got.ReasonCode, "expected benchmark-set-mismatch reason code")
+	require.Equal(t, ReasonBenchmarkSetMismatch, got.ReasonCode, "expected benchmark-set-mismatch reason code")
 }
 
 func TestParseCSVMissingPValueReturnsInconclusive(t *testing.T) {
@@ -393,7 +393,7 @@ Foo-8,1.0,1%,0.9,1%,-10.00%,?
 	got := report.Verdicts[0]
 
 	require.Equal(t, Inconclusive, got.Outcome, "expected inconclusive outcome")
-	require.Equal(t, "missing-pvalue", got.ReasonCode, "expected missing-pvalue reason code")
+	require.Equal(t, ReasonMissingPValue, got.ReasonCode, "expected missing-pvalue reason code")
 }
 
 func TestParseCSVWithOnlyHeaderReturnsError(t *testing.T) {
@@ -859,7 +859,7 @@ BenchmarkEnhance/c-10 100 8 ns/op
 
 	require.Equal(t, Inconclusive, got.Outcome,
 		"expected outcome to be inconclusive")
-	require.Equal(t, "ambiguous-labels", got.ReasonCode,
+	require.Equal(t, ReasonAmbiguousLabels, got.ReasonCode,
 		"expected reason code to be 'ambiguous-labels'")
 }
 
@@ -909,7 +909,7 @@ func rawFileInconclusiveCases() []rawFileInconclusiveCase {
 			aInput: strings.Repeat("BenchmarkExampleFast-10 100 1 ns/op\n", 10) +
 				strings.Repeat("BenchmarkOther-10 100 1 ns/op\n", 10),
 			bInput: strings.Repeat("BenchmarkExampleSlow-10 100 10 ns/op\n", 10),
-			reason: "ambiguous-benchmark",
+			reason: ReasonAmbiguousBenchmark,
 		},
 		{
 			name:   "unsupported metric",
@@ -995,23 +995,23 @@ func rawInconclusiveReasonCodeContractCases() []rawReasonCodeContractCase {
 		),
 		rawParseReasonCodeCase(
 			"ambiguous labels",
-			"ambiguous-labels",
+			ReasonAmbiguousLabels,
 			"BenchmarkEnhance/a-10 100 10 ns/op\nBenchmarkEnhance/b-10 100 8 ns/op\nBenchmarkEnhance/c-10 100 8 ns/op\n",
 			Options{},
 		),
 		rawParseReasonCodeCase(
 			"missing baseline",
-			"missing-baseline",
+			ReasonMissingBaseline,
 			"BenchmarkEnhance/enhanced-10 100 8 ns/op\n",
 			Options{Mode: ModeGoTestBench},
 		),
 		rawParseReasonCodeCase(
 			"missing candidate",
-			"missing-candidate",
+			ReasonMissingCandidate,
 			"BenchmarkEnhance/original-10 100 8 ns/op\n",
 			Options{Mode: ModeGoTestBench},
 		),
-		rawFileReasonCodeCase("ambiguous benchmark", "ambiguous-benchmark"),
+		rawFileReasonCodeCase("ambiguous benchmark", ReasonAmbiguousBenchmark),
 	}
 }
 
@@ -1174,7 +1174,7 @@ geomean               1.0n      10.0n ? ¹ ²
 
 	got := report.Verdicts[0]
 
-	require.Equal(t, "benchmark-set-mismatch", got.ReasonCode,
+	require.Equal(t, ReasonBenchmarkSetMismatch, got.ReasonCode,
 		"expected reason code to indicate benchmark set mismatch")
 	require.Equal(t, "./fast.txt", got.BaselineLabel,
 		"unexpected baseline label")
@@ -1274,7 +1274,7 @@ BenchmarkEnhance/enhanced-10 100 8 ns/op
 	got := report.Verdicts[0]
 
 	require.Equal(t, Inconclusive, got.Outcome, "unexpected outcome")
-	require.Equal(t, "missing-baseline", got.ReasonCode, "unexpected reason code")
+	require.Equal(t, ReasonMissingBaseline, got.ReasonCode, "unexpected reason code")
 }
 
 func TestParseGoTestBenchModeMissingCandidate(t *testing.T) {
@@ -1290,7 +1290,7 @@ BenchmarkEnhance/original-10 100 8 ns/op
 	got := report.Verdicts[0]
 
 	require.Equal(t, Inconclusive, got.Outcome, "unexpected outcome")
-	require.Equal(t, "missing-candidate", got.ReasonCode, "unexpected reason code")
+	require.Equal(t, ReasonMissingCandidate, got.ReasonCode, "unexpected reason code")
 }
 
 func TestParseGoTestBenchModeInsufficientSamples(t *testing.T) {
@@ -1350,7 +1350,7 @@ BenchmarkEnhance/enhanced-10 100 9 MB/s
 	got := report.Verdicts[0]
 
 	require.Equal(t, Inconclusive, got.Outcome, "unexpected outcome")
-	require.Equal(t, "unsupported-metric", got.ReasonCode, "unexpected reason code")
+	require.Equal(t, ReasonUnsupportedMetric, got.ReasonCode, "unexpected reason code")
 }
 
 func TestParseGoTestBenchModeNoCommonMetric(t *testing.T) {
@@ -1368,7 +1368,7 @@ BenchmarkEnhance/enhanced-10 100 1 allocs/op
 	got := report.Verdicts[0]
 
 	require.Equal(t, Inconclusive, got.Outcome, "unexpected outcome")
-	require.Equal(t, "unsupported-metric", got.ReasonCode, "unexpected reason code")
+	require.Equal(t, ReasonUnsupportedMetric, got.ReasonCode, "unexpected reason code")
 }
 
 func TestParseGoTestBenchModeMalformedBenchmark(t *testing.T) {

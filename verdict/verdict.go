@@ -50,6 +50,27 @@ const (
 	ModeGoTestBench = "gotestbench"
 )
 
+const (
+	// ReasonMissingPValue identifies comparisons without a usable p-value.
+	ReasonMissingPValue = "missing-pvalue"
+	// ReasonBenchmarkSetMismatch identifies benchstat input with different benchmark sets.
+	ReasonBenchmarkSetMismatch = "benchmark-set-mismatch"
+	// ReasonMissingBaseline identifies raw input without the selected baseline label.
+	ReasonMissingBaseline = "missing-baseline"
+	// ReasonMissingCandidate identifies raw input without the selected candidate label.
+	ReasonMissingCandidate = "missing-candidate"
+	// ReasonInsufficientSamples identifies raw comparison input with too few repeated samples.
+	ReasonInsufficientSamples = "insufficient-samples"
+	// ReasonUnsupportedMetric identifies raw input without supported metrics to compare.
+	ReasonUnsupportedMetric = "unsupported-metric"
+	// ReasonMalformedBenchmark identifies raw input with malformed benchmark rows.
+	ReasonMalformedBenchmark = "malformed-benchmark"
+	// ReasonAmbiguousLabels identifies raw input where one baseline/candidate pair cannot be selected.
+	ReasonAmbiguousLabels = "ambiguous-labels"
+	// ReasonAmbiguousBenchmark identifies a raw benchmark file with more than one benchmark series.
+	ReasonAmbiguousBenchmark = "ambiguous-benchmark"
+)
+
 // Options controls parser mode, labels, and the statistical and practical
 // thresholds used by Parse and CompareRawFiles.
 //
@@ -183,16 +204,27 @@ func parseBenchstat(text string, opts Options) (Report, error) {
 	if result.InconclusiveReason != "" {
 		if result.IncludeLabels {
 			return labeledInconclusiveReport(
-				result.InconclusiveReason,
+				benchstatReasonCode(result.InconclusiveReason),
 				labelWithFallback(result.BaselineLabel, fallbackBaselineLabel),
 				labelWithFallback(result.CandidateLabel, fallbackCandidateLabel),
 			), nil
 		}
 
-		return inconclusiveReport(result.InconclusiveReason), nil
+		return inconclusiveReport(benchstatReasonCode(result.InconclusiveReason)), nil
 	}
 
 	return evaluate(benchstatComparisons(result.Comparisons, opts)), nil
+}
+
+func benchstatReasonCode(reason string) string {
+	switch reason {
+	case benchstat.ReasonBenchmarkSetMismatch:
+		return ReasonBenchmarkSetMismatch
+	case benchstat.ReasonMissingPValue:
+		return ReasonMissingPValue
+	default:
+		return reason
+	}
 }
 
 func labelWithFallback(label, fallback string) string {

@@ -35,11 +35,11 @@ type reasonCodeErrorHandler struct {
 func reasonCodeErrorHandlers() []reasonCodeErrorHandler {
 	return []reasonCodeErrorHandler{
 		{
-			reasonCode: "benchmark-set-mismatch",
+			reasonCode: verdict.ReasonBenchmarkSetMismatch,
 			handle:     benchmarkSetMismatchError,
 		},
 		{
-			reasonCode: "insufficient-samples",
+			reasonCode: verdict.ReasonInsufficientSamples,
 			handle: func(verdict.BenchmarkVerdict) error {
 				return insufficientSamplesError()
 			},
