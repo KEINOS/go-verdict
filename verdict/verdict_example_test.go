@@ -36,7 +36,7 @@ func ExampleParse_rawGoTestBench() {
 	)
 
 	opts := verdict.NewOptions()
-	opts.Mode = "gotestbench"
+	opts.Mode = verdict.ModeGoTestBench
 	opts.Baseline = "original"
 	opts.Candidate = "enhanced"
 

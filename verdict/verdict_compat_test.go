@@ -23,6 +23,9 @@ func TestCompatibilityV1_0_0(t *testing.T) {
 	require.Equal(t, verdict.Tie, verdict.Outcome("tie"))
 	require.Equal(t, verdict.TradeOff, verdict.Outcome("trade-off"))
 	require.Equal(t, verdict.Inconclusive, verdict.Outcome("inconclusive"))
+	require.Equal(t, "auto", verdict.ModeAuto)
+	require.Equal(t, "benchstat", verdict.ModeBenchstat)
+	require.Equal(t, "gotestbench", verdict.ModeGoTestBench)
 	require.Equal(t, 2, verdict.StatisticalMinSamples)
 	require.Equal(t, 3, verdict.RawComparisonMinSamples)
 	require.Equal(t, 10, verdict.RecommendedRawSamples)
@@ -59,6 +62,9 @@ func compileV100Options() {
 	acceptString(options.Mode)
 	acceptString(options.Baseline)
 	acceptString(options.Candidate)
+	acceptString(verdict.ModeAuto)
+	acceptString(verdict.ModeBenchstat)
+	acceptString(verdict.ModeGoTestBench)
 }
 
 func compileV100ReportTypes() {

@@ -19,7 +19,6 @@ const (
 	flagMode        = "--mode"
 	formatText      = "text"
 	formatJSON      = "json"
-	modeGoTestBench = "gotestbench"
 	removedMode     = "alternatives"
 	optionAlpha     = "alpha"
 	optionMinDelta  = "min-delta"
@@ -436,7 +435,7 @@ func TestRunCLIGoTestBenchScannerErrorIsParseError(t *testing.T) {
 
 	input := "BenchmarkEnhance/original-10 100 " + strings.Repeat("1", 70*1024) + " ns/op\n"
 
-	err := runCLI([]string{flagMode, modeGoTestBench}, strings.NewReader(input), &strings.Builder{})
+	err := runCLI([]string{flagMode, verdict.ModeGoTestBench}, strings.NewReader(input), &strings.Builder{})
 	require.Error(t, err,
 		"scanner failure should return parse error")
 
@@ -591,7 +590,7 @@ func TestRunCLIGoTestBenchMode(t *testing.T) {
 
 	var out strings.Builder
 
-	err := runCLI([]string{flagMode, modeGoTestBench}, strings.NewReader(goTestBenchInput), &out)
+	err := runCLI([]string{flagMode, verdict.ModeGoTestBench}, strings.NewReader(goTestBenchInput), &out)
 	require.NoError(t, err,
 		"failed to run gotestbench mode")
 	require.Contains(t, out.String(), "BenchmarkEnhance: enhanced wins",
@@ -622,7 +621,7 @@ func TestRunCLIGoTestBenchModeWithCustomLabels(t *testing.T) {
 	var out strings.Builder
 
 	err := runCLI(
-		[]string{flagMode, modeGoTestBench, "--baseline", "base", "--candidate", "candidate"},
+		[]string{flagMode, verdict.ModeGoTestBench, "--baseline", "base", "--candidate", "candidate"},
 		strings.NewReader(input),
 		&out,
 	)

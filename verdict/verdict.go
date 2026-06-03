@@ -41,6 +41,15 @@ const (
 	Inconclusive Outcome = "inconclusive"
 )
 
+const (
+	// ModeAuto detects benchstat or raw Go benchmark input.
+	ModeAuto = "auto"
+	// ModeBenchstat reads already compared benchstat text or CSV input.
+	ModeBenchstat = "benchstat"
+	// ModeGoTestBench reads raw Go benchmark rows from stdin.
+	ModeGoTestBench = "gotestbench"
+)
+
 // Options controls parser mode, labels, and the statistical and practical
 // thresholds used by Parse and CompareRawFiles.
 //
@@ -114,9 +123,6 @@ const (
 	defaultCandidate       = "enhanced"
 	fallbackBaselineLabel  = "old"
 	fallbackCandidateLabel = "new"
-	modeAuto               = "auto"
-	modeGoTestBench        = "gotestbench"
-	modeBenchstat          = "benchstat"
 )
 
 var (
@@ -143,9 +149,9 @@ func Parse(reader io.Reader, opts Options) (Report, error) {
 	text := string(input)
 
 	switch opts.Mode {
-	case modeGoTestBench:
+	case ModeGoTestBench:
 		return parseGoTestBench(text, opts)
-	case modeBenchstat:
+	case ModeBenchstat:
 		return parseBenchstat(text, opts)
 	default:
 		if rawbench.LooksLikeGoTestBench(text) {
@@ -228,7 +234,7 @@ func NewOptions() Options {
 	return Options{
 		Alpha:       defaultAlpha,
 		MinDeltaPct: 0,
-		Mode:        modeAuto,
+		Mode:        ModeAuto,
 		Baseline:    "",
 		Candidate:   "",
 	}
@@ -240,14 +246,14 @@ func normalizeOptions(opts Options) Options {
 	}
 
 	if opts.Mode == "" {
-		opts.Mode = modeAuto
+		opts.Mode = ModeAuto
 	}
 
-	if opts.Mode == modeGoTestBench && opts.Baseline == "" {
+	if opts.Mode == ModeGoTestBench && opts.Baseline == "" {
 		opts.Baseline = defaultBaseline
 	}
 
-	if opts.Mode == modeGoTestBench && opts.Candidate == "" {
+	if opts.Mode == ModeGoTestBench && opts.Candidate == "" {
 		opts.Candidate = defaultCandidate
 	}
 
@@ -272,7 +278,7 @@ func validateParseOptions(opts Options) error {
 	}
 
 	switch opts.Mode {
-	case modeAuto, modeBenchstat, modeGoTestBench:
+	case ModeAuto, ModeBenchstat, ModeGoTestBench:
 		return nil
 	default:
 		return fmt.Errorf("%w: unknown mode %q", errInvalidOptions, opts.Mode)

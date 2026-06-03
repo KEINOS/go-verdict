@@ -28,7 +28,7 @@ func main() {
 }
 ```
 
-`verdict.Options{}` uses the default alpha of `0.05`. `verdict.NewOptions()` returns the same safe defaults for callers that prefer explicit setup. If you set `Alpha`, use a finite value greater than `0` and at most `1`; `MinDeltaPct` must be finite and non-negative.
+`verdict.Options{}` uses the default alpha of `0.05`. `verdict.NewOptions()` returns the same safe defaults for callers that prefer explicit setup. If you set `Alpha`, use a finite value greater than `0` and at most `1`; `MinDeltaPct` must be finite and non-negative. Supported mode constants are `verdict.ModeAuto`, `verdict.ModeBenchstat`, and `verdict.ModeGoTestBench`.
 
 ## Parse Raw Go Test Bench Input
 
@@ -36,7 +36,7 @@ Parse raw `go test -bench` input from stdin by selecting explicit sub-benchmark 
 
 ```go
 report, err := verdict.Parse(os.Stdin, verdict.Options{
-  Mode:      "gotestbench",
+  Mode:      verdict.ModeGoTestBench,
   Baseline:  "original",
   Candidate: "enhanced",
 })

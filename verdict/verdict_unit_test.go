@@ -28,7 +28,6 @@ const (
 	optionMinDeltaName       = "min-delta"
 	reasonMixed              = "mixed result"
 	reasonSame               = "same"
-	goTestBenchMode          = "gotestbench"
 	reasonMalformedBenchmark = "malformed-benchmark"
 	reasonInsufficient       = "insufficient-samples"
 	reasonUnsupported        = "unsupported-metric"
@@ -109,7 +108,7 @@ Foo-8              10.0n ± 1%             8.0n ± 1%  -20.00% (p=0.001 n=10)
 func TestParseExplicitBenchstatMode(t *testing.T) {
 	t.Parallel()
 
-	report, err := Parse(strings.NewReader(benchstatNewWinsInput), Options{Mode: modeBenchstat})
+	report, err := Parse(strings.NewReader(benchstatNewWinsInput), Options{Mode: ModeBenchstat})
 	require.NoError(t, err)
 
 	require.Equal(t, labelNew, report.Verdicts[0].Winner,
@@ -173,9 +172,9 @@ func TestParseModeValidation(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "empty mode uses auto"},
-		{name: "auto mode", mode: modeAuto},
-		{name: "benchstat mode", mode: modeBenchstat},
-		{name: "go test bench mode", mode: goTestBenchMode},
+		{name: "auto mode", mode: ModeAuto},
+		{name: "benchstat mode", mode: ModeBenchstat},
+		{name: "go test bench mode", mode: ModeGoTestBench},
 		{name: "removed alternatives mode", mode: "alternatives", wantErr: true},
 		{name: "uppercase mode", mode: "GOTESTBENCH", wantErr: true},
 		{name: "whitespace-only mode", mode: " ", wantErr: true},
@@ -335,7 +334,7 @@ func TestParseGoTestBenchScannerErrorContainsContext(t *testing.T) {
 
 	longLine := "BenchmarkEnhance/original-10 100 " + strings.Repeat("1", 70*1024) + " ns/op\n"
 
-	_, err := Parse(strings.NewReader(longLine), Options{Mode: goTestBenchMode})
+	_, err := Parse(strings.NewReader(longLine), Options{Mode: ModeGoTestBench})
 	require.Error(t, err, "expected scanner error")
 	require.ErrorContains(t, err, "scanning raw go test -bench input",
 		"error should contain context about scanning raw go test -bench input")
@@ -765,7 +764,7 @@ func TestWriteTextMetricErrorFromReportContainsContext(t *testing.T) {
 func TestParseGoTestBenchModeNewWins(t *testing.T) {
 	t.Parallel()
 
-	report, err := Parse(strings.NewReader(rawGoTestBenchInput), Options{Mode: goTestBenchMode})
+	report, err := Parse(strings.NewReader(rawGoTestBenchInput), Options{Mode: ModeGoTestBench})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -980,19 +979,19 @@ func rawInconclusiveReasonCodeContractCases() []rawReasonCodeContractCase {
 			"malformed benchmark",
 			reasonMalformedBenchmark,
 			"BenchmarkEnhance/original-10 nope 8 ns/op\n",
-			Options{Mode: goTestBenchMode},
+			Options{Mode: ModeGoTestBench},
 		),
 		rawParseReasonCodeCase(
 			"unsupported metric",
 			reasonUnsupported,
 			"BenchmarkEnhance/original-10 100 8 MB/s\n",
-			Options{Mode: goTestBenchMode},
+			Options{Mode: ModeGoTestBench},
 		),
 		rawParseReasonCodeCase(
 			"insufficient samples",
 			reasonInsufficient,
 			"BenchmarkEnhance/original-10 100 8 ns/op\nBenchmarkEnhance/enhanced-10 100 7 ns/op\n",
-			Options{Mode: goTestBenchMode},
+			Options{Mode: ModeGoTestBench},
 		),
 		rawParseReasonCodeCase(
 			"ambiguous labels",
@@ -1004,13 +1003,13 @@ func rawInconclusiveReasonCodeContractCases() []rawReasonCodeContractCase {
 			"missing baseline",
 			"missing-baseline",
 			"BenchmarkEnhance/enhanced-10 100 8 ns/op\n",
-			Options{Mode: goTestBenchMode},
+			Options{Mode: ModeGoTestBench},
 		),
 		rawParseReasonCodeCase(
 			"missing candidate",
 			"missing-candidate",
 			"BenchmarkEnhance/original-10 100 8 ns/op\n",
-			Options{Mode: goTestBenchMode},
+			Options{Mode: ModeGoTestBench},
 		),
 		rawFileReasonCodeCase("ambiguous benchmark", "ambiguous-benchmark"),
 	}
@@ -1197,7 +1196,7 @@ BenchmarkEnhance/group/candidate-10 100 10 ns/op
 	report, err := Parse(strings.NewReader(input), Options{
 		Alpha:       0,
 		MinDeltaPct: 0,
-		Mode:        goTestBenchMode,
+		Mode:        ModeGoTestBench,
 		Baseline:    "base",
 		Candidate:   labelCandidate,
 	})
@@ -1222,7 +1221,7 @@ BenchmarkEnhance/original-10 100 10 ns/op 8 B/op
 BenchmarkEnhance/enhanced-10 100 8 ns/op 16 B/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: ModeGoTestBench})
 	require.NoError(t, err)
 
 	require.Equal(t, TradeOff, report.Verdicts[0].Outcome, "unexpected outcome")
@@ -1239,7 +1238,7 @@ BenchmarkEnhance/original-10 100 10 ns/op
 BenchmarkEnhance/enhanced-10 100 10 ns/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: ModeGoTestBench})
 	require.NoError(t, err)
 
 	require.Equal(t, Tie, report.Verdicts[0].Outcome, "unexpected outcome")
@@ -1256,7 +1255,7 @@ BenchmarkEnhance/original-10 100 8 ns/op
 BenchmarkEnhance/enhanced-10 100 10 ns/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: ModeGoTestBench})
 	require.NoError(t, err)
 
 	require.Equal(t, OldWins, report.Verdicts[0].Outcome, "unexpected outcome")
@@ -1269,7 +1268,7 @@ func TestParseGoTestBenchModeMissingBaseline(t *testing.T) {
 BenchmarkEnhance/enhanced-10 100 8 ns/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: ModeGoTestBench})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1285,7 +1284,7 @@ func TestParseGoTestBenchModeMissingCandidate(t *testing.T) {
 BenchmarkEnhance/original-10 100 8 ns/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: ModeGoTestBench})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1301,7 +1300,7 @@ func TestParseGoTestBenchModeInsufficientSamples(t *testing.T) {
 BenchmarkEnhance/enhanced-10 100 7 ns/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: ModeGoTestBench})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1327,7 +1326,7 @@ func TestParseGoTestBenchRawSampleBoundaries(t *testing.T) {
 		t.Run(fmt.Sprintf("count_%d", test.count), func(t *testing.T) {
 			t.Parallel()
 
-			report, err := Parse(strings.NewReader(rawGoTestBenchSamples(test.count)), Options{Mode: goTestBenchMode})
+			report, err := Parse(strings.NewReader(rawGoTestBenchSamples(test.count)), Options{Mode: ModeGoTestBench})
 			require.NoError(t, err)
 
 			got := report.Verdicts[0]
@@ -1345,7 +1344,7 @@ func TestParseGoTestBenchModeUnsupportedMetric(t *testing.T) {
 BenchmarkEnhance/enhanced-10 100 9 MB/s
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: ModeGoTestBench})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1363,7 +1362,7 @@ BenchmarkEnhance/original-10 100 8 ns/op
 BenchmarkEnhance/enhanced-10 100 1 allocs/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: ModeGoTestBench})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1375,7 +1374,7 @@ BenchmarkEnhance/enhanced-10 100 1 allocs/op
 func TestParseGoTestBenchModeMalformedBenchmark(t *testing.T) {
 	t.Parallel()
 
-	report, err := Parse(strings.NewReader("BenchmarkEnhance 100 8 ns/op\n"), Options{Mode: goTestBenchMode})
+	report, err := Parse(strings.NewReader("BenchmarkEnhance 100 8 ns/op\n"), Options{Mode: ModeGoTestBench})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1387,7 +1386,7 @@ func TestParseGoTestBenchModeMalformedBenchmark(t *testing.T) {
 func TestParseGoTestBenchModeMalformedShortRow(t *testing.T) {
 	t.Parallel()
 
-	report, err := Parse(strings.NewReader("BenchmarkEnhance/original-10 100\n"), Options{Mode: goTestBenchMode})
+	report, err := Parse(strings.NewReader("BenchmarkEnhance/original-10 100\n"), Options{Mode: ModeGoTestBench})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1399,7 +1398,7 @@ func TestParseGoTestBenchModeMalformedShortRow(t *testing.T) {
 func TestParseGoTestBenchModeMalformedIteration(t *testing.T) {
 	t.Parallel()
 
-	report, err := Parse(strings.NewReader("BenchmarkEnhance/original-10 nope 8 ns/op\n"), Options{Mode: goTestBenchMode})
+	report, err := Parse(strings.NewReader("BenchmarkEnhance/original-10 nope 8 ns/op\n"), Options{Mode: ModeGoTestBench})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1413,7 +1412,7 @@ func TestParseGoTestBenchModeMalformedSupportedMetricValue(t *testing.T) {
 
 	report, err := Parse(
 		strings.NewReader("BenchmarkEnhance/original-10 100 nope ns/op\n"),
-		Options{Mode: goTestBenchMode},
+		Options{Mode: ModeGoTestBench},
 	)
 	require.NoError(t, err)
 
@@ -1442,7 +1441,7 @@ func TestCompareRawFilesMalformedSupportedMetricValue(t *testing.T) {
 func TestParseGoTestBenchModeNoBenchmarkRows(t *testing.T) {
 	t.Parallel()
 
-	report, err := Parse(strings.NewReader("PASS\n"), Options{Mode: goTestBenchMode})
+	report, err := Parse(strings.NewReader("PASS\n"), Options{Mode: ModeGoTestBench})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0]
@@ -1456,7 +1455,7 @@ func TestParseGoTestBenchModeSkipsUnrequestedLabels(t *testing.T) {
 
 	input := rawGoTestBenchInput + "BenchmarkEnhance/control-10 100 1 ns/op\n"
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: ModeGoTestBench})
 	require.NoError(t, err)
 	require.Equal(t, NewWins, report.Verdicts[0].Outcome, "unexpected outcome")
 }
@@ -1475,7 +1474,7 @@ BenchmarkA/original-10 100 10 ns/op
 BenchmarkA/original-10 100 10 ns/op
 `
 
-	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode})
+	report, err := Parse(strings.NewReader(input), Options{Mode: ModeGoTestBench})
 	require.NoError(t, err)
 
 	require.Equal(t, "BenchmarkA", report.Verdicts[0].Benchmark,
@@ -1526,7 +1525,7 @@ BenchmarkEnhance/enhanced-10 100 9 ns/op
 BenchmarkEnhance/original-10 100 11 ns/op
 BenchmarkEnhance/enhanced-10 100 8.5 ns/op
 `
-	report, err := Parse(strings.NewReader(input), Options{Mode: goTestBenchMode, Alpha: 1})
+	report, err := Parse(strings.NewReader(input), Options{Mode: ModeGoTestBench, Alpha: 1})
 	require.NoError(t, err)
 
 	got := report.Verdicts[0].Metrics[0].PValue

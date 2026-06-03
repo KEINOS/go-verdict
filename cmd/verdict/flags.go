@@ -15,7 +15,6 @@ const (
 	flagVersionLong  = "--version"
 	flagVersionShort = "-v"
 	formatDefault    = "text"
-	modeDefault      = "auto"
 )
 
 type cliOptions struct {
@@ -70,7 +69,7 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 		return nil, cliOptions{}, fmt.Errorf("%w: %w", errParsingFlags, err)
 	}
 
-	if opts.Mode != modeDefault && opts.Mode != "benchstat" && opts.Mode != "gotestbench" {
+	if opts.Mode != verdict.ModeAuto && opts.Mode != verdict.ModeBenchstat && opts.Mode != verdict.ModeGoTestBench {
 		return nil, cliOptions{}, errUnknownMode
 	}
 
