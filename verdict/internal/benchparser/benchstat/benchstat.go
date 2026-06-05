@@ -200,9 +200,16 @@ func (state *csvParseState) parseComparison(fields []string) (benchparser.Compar
 		return zeroComparison, false
 	}
 
-	delta, ok := parseDeltaPercent(fields[state.deltaIndex])
-	if !ok {
-		return zeroComparison, false
+	isApproxEqual := strings.TrimSpace(fields[state.deltaIndex]) == "~"
+	delta := 0.0
+
+	if !isApproxEqual {
+		var ok bool
+
+		delta, ok = parseDeltaPercent(fields[state.deltaIndex])
+		if !ok {
+			return zeroComparison, false
+		}
 	}
 
 	pValue, ok := parsePValue(fields[state.pValueIndex])
@@ -217,7 +224,7 @@ func (state *csvParseState) parseComparison(fields []string) (benchparser.Compar
 		PValue:         pValue,
 		BaselineLabel:  state.baselineLabel,
 		CandidateLabel: state.candidateLabel,
-		ApproxEqual:    false,
+		ApproxEqual:    isApproxEqual,
 	}, true
 }
 

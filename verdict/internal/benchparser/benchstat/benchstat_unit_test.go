@@ -37,6 +37,27 @@ Foo-8,1.0e-08,1%,8.0e-09,1%,-20.00%,p=0.001 n=10
 	}}, result.Comparisons)
 }
 
+func TestParseCSVApproxEqual(t *testing.T) {
+	t.Parallel()
+
+	input := `,old.txt,,new.txt,,,
+,sec/op,CI,sec/op,CI,vs base,P
+Foo-8,1.0e-08,1%,1.0e-08,1%,~,p=0.943 n=10
+`
+
+	result, err := Parse(input)
+	require.NoError(t, err)
+	require.Equal(t, []benchparser.Comparison{{
+		Benchmark:      "Foo-8",
+		Metric:         benchparser.MetricSecPerOp,
+		DeltaPct:       0,
+		PValue:         0.943,
+		BaselineLabel:  "old.txt",
+		CandidateLabel: "new.txt",
+		ApproxEqual:    true,
+	}}, result.Comparisons)
+}
+
 func TestParseTextMissingPValue(t *testing.T) {
 	t.Parallel()
 
