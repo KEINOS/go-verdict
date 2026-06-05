@@ -1,6 +1,6 @@
-.PHONY: help check test test-verbose lint
+.PHONY: help all check test test-verbose lint
 .PHONY: build build-binary verify-build
-.PHONY: clean-dist clean-testdata clean-all
+.PHONY: clean-dist clean-testdata clean
 .PHONY: data data-cache-hit data-cache-key data-cache-save data-generate
 .PHONY: data-example-mismatch data-benchstat-repeat-fast data-gotestbench data-insufficient
 .PHONY: e2e e2e-readme-pipelines
@@ -18,7 +18,9 @@ DATA_CACHE_INPUTS := ./go.mod ./go.sum ./testdata/benchtargets/targets.go
 DATA_FIXTURES := ./testdata/bench_ExampleFast.txt ./testdata/bench_ExampleSlow.txt ./testdata/bench_old.txt ./testdata/bench_new.txt ./testdata/bench_gotestbench.txt ./testdata/bench_gotestbench_count2.txt ./testdata/benchstat_Example.txt ./testdata/benchstat_E2E.txt ./testdata/benchstat_csv_E2E.txt
 
 help:
-	@printf '%s\n' 'Development targets (run from the repository root):' '  make check                Run all validation gates: test, lint, and e2e.' '  make test                 Run unit tests with race detector and coverage.' '  make lint                 Run mutating fixers: go fix, golangci-lint --fix, markdownlint-cli2 --fix.' '  make build                Remove ./dist, then build ./dist/verdict.' '  make clean-dist           Remove ./dist.' '  make clean-testdata       Remove generated testdata/*.txt files.' '  make clean-all            Remove generated testdata/*.txt files and ./dist.' '' 'Fixture targets:' '  make data                 Ensure benchmark fixtures exist and are current.' '  make data-gotestbench     Regenerate the raw go test -bench fixture.' '' 'End-to-end targets (build first and assume repo-root paths):' '  make e2e                  Run all E2E checks.' '  make e2e-benchstat        Check benchstat stdin parsing.' '  make e2e-gotestbench      Check raw go test -bench stdin parsing.' '  make e2e-ab               Check explicit raw-file A/B comparison.' '  make e2e-insufficient     Check insufficient raw sample guidance.'
+	@printf '%s\n' 'Development targets (run from the repository root):' '  make all                  Run make check build.' '  make check                Run all validation gates: test, lint, and e2e.' '  make test                 Run unit tests with race detector and coverage.' '  make lint                 Run mutating fixers: go fix, golangci-lint --fix, markdownlint-cli2 --fix.' '  make build                Remove ./dist, then build ./dist/verdict.' '  make clean-dist           Remove ./dist.' '  make clean-testdata       Remove generated testdata/*.txt files.' '  make clean                Remove generated testdata/*.txt files and ./dist.' '' 'Fixture targets:' '  make data                 Ensure benchmark fixtures exist and are current.' '  make data-gotestbench     Regenerate the raw go test -bench fixture.' '' 'End-to-end targets (build first and assume repo-root paths):' '  make e2e                  Run all E2E checks.' '  make e2e-benchstat        Check benchstat stdin parsing.' '  make e2e-gotestbench      Check raw go test -bench stdin parsing.' '  make e2e-ab               Check explicit raw-file A/B comparison.' '  make e2e-insufficient     Check insufficient raw sample guidance.'
+
+all: check build
 
 check: test lint e2e
 
@@ -165,4 +167,4 @@ clean-testdata:
 	@printf '\n== Clean: removing generated testdata/*.txt files ==\n'
 	@rm -f ./testdata/*.txt
 
-clean-all: clean-testdata clean-dist
+clean: clean-testdata clean-dist
