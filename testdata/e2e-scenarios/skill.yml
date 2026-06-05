@@ -1,0 +1,15 @@
+name: skill
+timeout: 10s
+
+cases:
+  - name: show skill
+    args: ["skill"]
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "name: verdict"
+          - "description:"
+          - "compare Go benchmark results with the verdict CLI"
+      stderr:
+        equals: ""

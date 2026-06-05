@@ -1,0 +1,25 @@
+name: help
+timeout: 10s
+
+cases:
+  - name: show help
+    args: ["--help"]
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "Turn Go benchmark results into a winner, tie, or trade-off."
+          - "Commands:"
+          - "Options:"
+      stderr:
+        equals: ""
+
+  - name: show short help
+    args: ["-h"]
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "Turn Go benchmark results into a winner, tie, or trade-off."
+      stderr:
+        equals: ""

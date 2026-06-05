@@ -1,0 +1,15 @@
+name: insufficient
+timeout: 20s
+
+cases:
+  - name: raw go test bench needs enough samples
+    stdin_file: testdata/bench_gotestbench_count2.txt
+    want:
+      exit_code: 1
+      stdout:
+        equals: ""
+      stderr:
+        contains:
+          - "insufficient samples"
+          - "at least 3 samples"
+          - "-count=10 or more"

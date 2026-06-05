@@ -1,0 +1,28 @@
+name: explicit-ab
+timeout: 20s
+
+cases:
+  - name: mismatch suggests explicit raw file comparison
+    stdin_file: testdata/benchstat_Example.txt
+    want:
+      exit_code: 1
+      stdout:
+        equals: ""
+      stderr:
+        contains:
+          - "benchmark names differ"
+          - "verdict -a ./testdata/bench_ExampleFast.txt -b ./testdata/bench_ExampleSlow.txt"
+
+  - name: compare explicit raw files
+    args:
+      - "-a"
+      - "testdata/bench_ExampleFast.txt"
+      - "-b"
+      - "testdata/bench_ExampleSlow.txt"
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "BenchmarkExampleFast_vs_BenchmarkExampleSlow: BenchmarkExampleFast wins"
+      stderr:
+        equals: ""
