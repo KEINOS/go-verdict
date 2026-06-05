@@ -1,0 +1,10 @@
+{
+  "gopls": {
+	"buildFlags": ["-tags=e2e"]
+  },
+  "go.testTags": "e2e",
+  "go.testEnvVars": {
+	"VERDICT_BIN": "${workspaceFolder}/dist/verdict",
+	"VERDICT_E2E_SCENARIOS_DIR": "${workspaceFolder}/testdata/e2e-scenarios"
+  }
+}

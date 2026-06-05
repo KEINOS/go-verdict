@@ -36,22 +36,34 @@ Do not overwrite unrelated local changes. Review existing changes before editing
 
 ## End-to-End Checks
 
-The E2E tests build the `verdict` CLI and check its output using files in `testdata/` (benchmark fixtures).
+The E2E tests build the `verdict` CLI, prepare benchmark fixtures, and run YAML scenarios from `testdata/e2e-scenarios/`.
 
-Use the E2E target that matches your change:
+For normal validation, use:
 
 ```sh
 make e2e
-make e2e-benchstat
-make e2e-gotestbench
-make e2e-ab
-make e2e-insufficient
 ```
+
+`make e2e` is an alias for `make test-e2e`. It sets the required environment variables for the Go E2E harness:
+
+- `VERDICT_BIN`: path to the built `verdict` binary.
+- `VERDICT_E2E_SCENARIOS_DIR`: path to the YAML scenario directory.
+
+To call the Go test directly, build first and pass the `e2e` build tag with those variables:
+
+```sh
+make build data
+VERDICT_BIN="$(pwd)/dist/verdict" \
+VERDICT_E2E_SCENARIOS_DIR="$(pwd)/testdata/e2e-scenarios" \
+go test -tags=e2e -race ./tools/e2e/...
+```
+
+Add or update YAML scenarios when a CLI workflow changes. Scenario files use repository-root-relative paths for command arguments and `stdin_file` values.
 
 For a clean E2E run, use:
 
 ```sh
-make clean-all && make e2e
+make clean && make e2e
 ```
 
 ## Benchmark Fixtures
@@ -69,7 +81,7 @@ Cleanup targets:
 ```sh
 make clean-dist      # remove ./dist
 make clean-testdata  # remove generated testdata/*.txt files
-make clean-all       # remove both
+make clean           # remove both
 ```
 
 ## Architecture And Layout
@@ -92,6 +104,8 @@ cmd/verdict/internal/skill/    Embedded AI Agent skill text
 verdict/                       Public API, evaluator, and output writer
 verdict/internal/benchparser/  Benchmark input decoders
 testdata/                      Demo benchmarks and generated fixtures
+testdata/e2e-scenarios/        YAML E2E scenarios for the built CLI
+tools/e2e/                     Go E2E harness with the e2e build tag
 Makefile                       Fixture/jig and E2E commands
 ```
 

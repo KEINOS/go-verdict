@@ -13,11 +13,14 @@ dist
 testdata/*.txt
 
 # Include specific files
+!.github/SECURITY.md
+!.vscode
 !README.md
 !README_CLI.md
 !README_LIB.md
 !README_WORKFLOWS.md
 !CONTRIBUTING.md
-!.github/SECURITY.md
 !cmd/verdict/internal/skill/SKILL.md
 !cmd/verdict/internal/skill/README.md
+!testdata/benchtargets/*
+!testdata/e2e-scenarios/*

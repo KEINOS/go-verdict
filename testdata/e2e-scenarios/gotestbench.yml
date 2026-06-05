@@ -1,0 +1,56 @@
+name: gotestbench
+timeout: 20s
+
+cases:
+  - name: readme benchstat pipeline equivalent
+    stdin_file: testdata/benchstat_E2E.txt
+    want:
+      exit_code: 0
+      stdout:
+        matches:
+          - "ExampleFast-[0-9]+: (tie|bench_(old|new)\\.txt wins)"
+      stderr:
+        equals: ""
+
+  - name: readme gotestbench pipeline equivalent
+    stdin_file: testdata/bench_gotestbench.txt
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "BenchmarkEnhance: enhanced wins"
+      stderr:
+        equals: ""
+
+  - name: text output from raw go test bench
+    args: ["--format", "text"]
+    stdin_file: testdata/bench_gotestbench.txt
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "BenchmarkEnhance: enhanced wins"
+      stderr:
+        equals: ""
+
+  - name: verbose output from raw go test bench
+    args: ["--verbose", "--format", "text"]
+    stdin_file: testdata/bench_gotestbench.txt
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "Pareto-superior"
+      stderr:
+        equals: ""
+
+  - name: json output from raw go test bench
+    args: ["--format", "json"]
+    stdin_file: testdata/bench_gotestbench.txt
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - '"benchmark": "BenchmarkEnhance"'
+      stderr:
+        equals: ""
