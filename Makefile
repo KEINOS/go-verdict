@@ -69,7 +69,7 @@ e2e-readme-pipelines: build data-benchstat-repeat-fast
 	@printf '\n== Run README pipeline E2E: literal pipeline examples from the README opening ==\n'
 	benchstat ./testdata/bench_old.txt ./testdata/bench_new.txt | $(VERDICT) | tee ./testdata/verdict_readme_benchstat_pipeline_E2E.txt
 	go test -run='^$$' -bench=BenchmarkEnhance -benchmem -count=8 ./testdata/benchtargets | $(VERDICT) | tee ./testdata/verdict_readme_gotestbench_pipeline_E2E.txt
-	grep -Eq 'ExampleFast-10: (tie|bench_(old|new)\.txt wins)' ./testdata/verdict_readme_benchstat_pipeline_E2E.txt
+	grep -Eq 'ExampleFast-[0-9]+: (tie|bench_(old|new)\.txt wins)' ./testdata/verdict_readme_benchstat_pipeline_E2E.txt
 	grep -q 'BenchmarkEnhance: enhanced wins' ./testdata/verdict_readme_gotestbench_pipeline_E2E.txt
 
 e2e-benchstat: build data-benchstat-repeat-fast
@@ -77,9 +77,9 @@ e2e-benchstat: build data-benchstat-repeat-fast
 	$(VERDICT) --format text < ./testdata/benchstat_E2E.txt | tee ./testdata/verdict_text_E2E.txt
 	$(VERDICT) --verbose --format text < ./testdata/benchstat_E2E.txt | tee ./testdata/verdict_verbose_text_E2E.txt
 	$(VERDICT) --format json < ./testdata/benchstat_E2E.txt | tee ./testdata/verdict_json_E2E.txt
-	grep -Eq 'ExampleFast-10: (tie|bench_(old|new)\.txt wins)' ./testdata/verdict_text_E2E.txt
+	grep -Eq 'ExampleFast-[0-9]+: (tie|bench_(old|new)\.txt wins)' ./testdata/verdict_text_E2E.txt
 	grep -Eq '(no statistically significant practical difference|Pareto-superior)' ./testdata/verdict_verbose_text_E2E.txt
-	grep -q '"benchmark": "ExampleFast-10"' ./testdata/verdict_json_E2E.txt
+	grep -Eq '"benchmark": "ExampleFast-[0-9]+"' ./testdata/verdict_json_E2E.txt
 
 e2e-gotestbench: build data-gotestbench
 	@printf '\n== Run auto gotestbench E2E: BenchmarkEnhance/original vs BenchmarkEnhance/enhanced checks quick local comparison ==\n'
