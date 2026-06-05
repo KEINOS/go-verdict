@@ -18,5 +18,6 @@ testdata/*.txt
 !README_LIB.md
 !README_WORKFLOWS.md
 !CONTRIBUTING.md
+!.github/SECURITY.md
 !cmd/verdict/internal/skill/SKILL.md
 !cmd/verdict/internal/skill/README.md
