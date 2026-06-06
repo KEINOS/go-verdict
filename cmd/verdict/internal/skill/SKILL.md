@@ -1,6 +1,10 @@
 ---
 name: verdict
 description: Use when an AI agent needs an objective benchmark gate for Go optimization, needs to compare Go benchmark results with the verdict CLI, test a Go performance-improvement candidate, summarize benchstat output, judge local benchmark alternatives, or compare raw Go benchmark files as A/B inputs.
+license: MIT
+metadata:
+  author: KEINOS and The go-verdict Contributors
+  version: "1.0.0"
 ---
 
 # Verdict

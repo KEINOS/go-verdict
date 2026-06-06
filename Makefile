@@ -28,7 +28,7 @@ HELP_LINES := \
 	'  make check                Run all validation gates: test, lint, and e2e.' \
 	'  make test                 Run unit tests with race detector and coverage.' \
 	'  make test-e2e             Build verdict, prepare fixtures, then run YAML E2E scenarios.' \
-	'  make lint                 Run mutating fixers: go fix, golangci-lint --fix, markdownlint-cli2 --fix, yamlfmt.' \
+	'  make lint                 Run mutating fixers: go fix, golangci-lint run --fix, markdownlint-cli2 --fix, yamlfmt.' \
 	'  make build                Remove ./dist, then build ./dist/verdict.' \
 	'  make clean-dist           Remove ./dist.' \
 	'  make clean-testdata       Remove generated testdata/e2e-fixtures/*.txt files.' \

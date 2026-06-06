@@ -45,8 +45,7 @@ func writeString(output io.Writer, text string) error {
 }
 
 func flagHelpText() string {
-	return fmt.Sprintf(
-		`%s
+	return fmt.Sprintf(`%s
 
 Usage:
   verdict [command] [options]
@@ -85,7 +84,7 @@ Options:
       P-value threshold for statistical significance. Must be greater than 0 and at most 1. Default: 0.05.
   --min-delta value
       Minimum absolute delta percentage to treat as a practical difference. Must be non-negative. Default: 0.0.
- `,
+`,
 		AppDescription,
 		verdict.RawComparisonMinSamples,
 		verdict.RecommendedRawSamples,
