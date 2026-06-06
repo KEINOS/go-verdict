@@ -3,7 +3,7 @@ timeout: 20s
 
 cases:
   - name: raw go test bench needs enough samples
-    stdin_file: testdata/bench_gotestbench_count2.txt
+    stdin_file: testdata/e2e-fixtures/bench_gotestbench_count2.txt
     want:
       exit_code: 1
       stdout:

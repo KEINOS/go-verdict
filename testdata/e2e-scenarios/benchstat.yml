@@ -4,7 +4,7 @@ timeout: 20s
 cases:
   - name: text output from benchstat text
     args: ["--format", "text"]
-    stdin_file: testdata/benchstat_E2E.txt
+    stdin_file: testdata/e2e-fixtures/benchstat_E2E.txt
     want:
       exit_code: 0
       stdout:
@@ -15,7 +15,7 @@ cases:
 
   - name: verbose output from benchstat text
     args: ["--verbose", "--format", "text"]
-    stdin_file: testdata/benchstat_E2E.txt
+    stdin_file: testdata/e2e-fixtures/benchstat_E2E.txt
     want:
       exit_code: 0
       stdout:
@@ -26,7 +26,7 @@ cases:
 
   - name: json output from benchstat text
     args: ["--format", "json"]
-    stdin_file: testdata/benchstat_E2E.txt
+    stdin_file: testdata/e2e-fixtures/benchstat_E2E.txt
     want:
       exit_code: 0
       stdout:
@@ -37,7 +37,7 @@ cases:
 
   - name: text output from benchstat csv
     args: ["--format", "text"]
-    stdin_file: testdata/benchstat_csv_E2E.txt
+    stdin_file: testdata/e2e-fixtures/benchstat_csv_E2E.txt
     want:
       exit_code: 0
       stdout:
@@ -48,7 +48,7 @@ cases:
 
   - name: json output from benchstat csv
     args: ["--format", "json"]
-    stdin_file: testdata/benchstat_csv_E2E.txt
+    stdin_file: testdata/e2e-fixtures/benchstat_csv_E2E.txt
     want:
       exit_code: 0
       stdout:

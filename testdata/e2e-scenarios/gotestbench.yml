@@ -3,7 +3,7 @@ timeout: 20s
 
 cases:
   - name: readme benchstat pipeline equivalent
-    stdin_file: testdata/benchstat_E2E.txt
+    stdin_file: testdata/e2e-fixtures/benchstat_E2E.txt
     want:
       exit_code: 0
       stdout:
@@ -13,7 +13,7 @@ cases:
         equals: ""
 
   - name: readme gotestbench pipeline equivalent
-    stdin_file: testdata/bench_gotestbench.txt
+    stdin_file: testdata/e2e-fixtures/bench_gotestbench.txt
     want:
       exit_code: 0
       stdout:
@@ -24,7 +24,7 @@ cases:
 
   - name: text output from raw go test bench
     args: ["--format", "text"]
-    stdin_file: testdata/bench_gotestbench.txt
+    stdin_file: testdata/e2e-fixtures/bench_gotestbench.txt
     want:
       exit_code: 0
       stdout:
@@ -35,7 +35,7 @@ cases:
 
   - name: verbose output from raw go test bench
     args: ["--verbose", "--format", "text"]
-    stdin_file: testdata/bench_gotestbench.txt
+    stdin_file: testdata/e2e-fixtures/bench_gotestbench.txt
     want:
       exit_code: 0
       stdout:
@@ -46,7 +46,7 @@ cases:
 
   - name: json output from raw go test bench
     args: ["--format", "json"]
-    stdin_file: testdata/bench_gotestbench.txt
+    stdin_file: testdata/e2e-fixtures/bench_gotestbench.txt
     want:
       exit_code: 0
       stdout:

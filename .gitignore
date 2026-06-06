@@ -22,5 +22,6 @@ testdata/*.txt
 !CONTRIBUTING.md
 !cmd/verdict/internal/skill/SKILL.md
 !cmd/verdict/internal/skill/README.md
+!testdata/README.md
 !testdata/benchtargets/*
 !testdata/e2e-scenarios/*

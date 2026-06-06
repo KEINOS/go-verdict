@@ -3,7 +3,7 @@ timeout: 20s
 
 cases:
   - name: mismatch suggests explicit raw file comparison
-    stdin_file: testdata/benchstat_Example.txt
+    stdin_file: testdata/e2e-fixtures/benchstat_Example.txt
     want:
       exit_code: 1
       stdout:
@@ -11,14 +11,14 @@ cases:
       stderr:
         contains:
           - "benchmark names differ"
-          - "verdict -a ./testdata/bench_ExampleFast.txt -b ./testdata/bench_ExampleSlow.txt"
+          - "verdict -a ./testdata/e2e-fixtures/bench_ExampleFast.txt -b ./testdata/e2e-fixtures/bench_ExampleSlow.txt"
 
   - name: compare explicit raw files
     args:
       - "-a"
-      - "testdata/bench_ExampleFast.txt"
+      - "testdata/e2e-fixtures/bench_ExampleFast.txt"
       - "-b"
-      - "testdata/bench_ExampleSlow.txt"
+      - "testdata/e2e-fixtures/bench_ExampleSlow.txt"
     want:
       exit_code: 0
       stdout:

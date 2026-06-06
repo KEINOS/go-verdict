@@ -68,7 +68,7 @@ make clean && make e2e
 
 ## Benchmark Fixtures
 
-Regenerate benchmark fixtures only when benchmark examples, fixture formats, or E2E expectations change, or when fixtures are not present in `testdata/`.
+Regenerate benchmark fixtures only when benchmark examples, fixture formats, or E2E expectations change, or when fixtures are not present in `testdata/e2e-fixtures/`.
 
 ```sh
 make data
@@ -80,7 +80,7 @@ Cleanup targets:
 
 ```sh
 make clean-dist      # remove ./dist
-make clean-testdata  # remove generated testdata/*.txt files
+make clean-testdata  # remove generated testdata/e2e-fixtures/*.txt files
 make clean           # remove both
 ```
 
@@ -105,6 +105,7 @@ verdict/                       Public API, evaluator, and output writer
 verdict/internal/benchparser/  Benchmark input decoders
 testdata/                      Demo benchmarks and generated fixtures
 testdata/e2e-scenarios/        YAML E2E scenarios for the built CLI
+testdata/e2e-fixtures/         Generated text fixtures used by E2E scenarios
 tools/e2e/                     Go E2E harness with the e2e build tag
 Makefile                       Fixture/jig and E2E commands
 ```
