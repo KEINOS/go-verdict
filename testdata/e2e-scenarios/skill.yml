@@ -10,6 +10,8 @@ cases:
         contains:
           - "name: verdict"
           - "description:"
-          - "compare Go benchmark results with the verdict CLI"
+          - "license: MIT"
+          - "author: KEINOS and The go-verdict Contributors"
+          - "version:"
       stderr:
         equals: ""
