@@ -29,10 +29,13 @@ Do not overwrite unrelated local changes. Review existing changes before editing
 
 - `go test ./...`: Run focused tests while iterating.
 - `make test`: Run all tests with the race detector and coverage.
+- `make test-fuzz`: Run parser fuzz tests. Use `FUZZTIME=1m` to change the duration per target.
 - `make lint`: Run mutating fixers. It may rewrite Go and Markdown files.
 - `make build`: Remove `./dist`, then build `./dist/verdict`.
 - `make check`: Run `make test`, `make lint`, and `make e2e`.
 - `make help`: List development targets.
+
+`make test-fuzz` prints a short reminder that `Ctrl+C` cancels an active fuzz run.
 
 ## End-to-End Checks
 

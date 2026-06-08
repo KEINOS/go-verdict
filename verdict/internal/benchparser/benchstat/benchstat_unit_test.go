@@ -14,6 +14,7 @@ const (
 	longLineSize = 70 * 1024
 	rawBad       = "bad"
 	testFoo      = "Foo"
+	testFoo8     = "Foo-8"
 )
 
 func TestParseCSV(t *testing.T) {

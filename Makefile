@@ -1,4 +1,4 @@
-.PHONY: help all check test test-verbose test-e2e lint
+.PHONY: help all check test test-fuzz test-fuzz-benchstat test-fuzz-rawbench test-verbose test-e2e lint
 .PHONY: build build-binary verify-build
 .PHONY: clean-dist clean-testdata clean
 .PHONY: data data-cache-hit data-cache-key data-cache-save data-generate
@@ -12,6 +12,7 @@ SHASUM := shasum -a 1
 DATA_CACHE := ./testdata/e2e-fixtures/cache.txt
 DATA_CACHE_KEY := ./testdata/e2e-fixtures/cache_key.txt
 DATA_CACHE_INPUTS := ./go.mod ./go.sum ./testdata/benchtargets/targets.go
+FUZZTIME ?= 10s
 DATA_FIXTURES := \
 	./testdata/e2e-fixtures/bench_ExampleFast.txt \
 	./testdata/e2e-fixtures/bench_ExampleSlow.txt \
@@ -27,6 +28,7 @@ HELP_LINES := \
 	'  make all                  Run make check build.' \
 	'  make check                Run all validation gates: test, lint, and e2e.' \
 	'  make test                 Run unit tests with race detector and coverage.' \
+	'  make test-fuzz            Run parser fuzz tests. Override duration with FUZZTIME=1m.' \
 	'  make test-e2e             Build verdict, prepare fixtures, then run YAML E2E scenarios.' \
 	'  make lint                 Run mutating fixers: go fix, golangci-lint run --fix, markdownlint-cli2 --fix, yamlfmt.' \
 	'  make build                Remove ./dist, then build ./dist/verdict.' \
@@ -151,6 +153,20 @@ lint-yaml: check-yamlfmt-exist
 
 test:
 	go test -cover -race ./...
+
+test-fuzz:
+	@printf '* Running fuzz tests... (To cancel, press Ctrl+C)\n'
+	@printf '\n== Fuzz: parser fuzz tests ==\n'
+	@printf 'Fuzz time per target: %s\n' '$(FUZZTIME)'
+	@$(MAKE) --no-print-directory test-fuzz-rawbench test-fuzz-benchstat
+
+test-fuzz-benchstat:
+	go test ./verdict/internal/benchparser/benchstat -run='^$$' -fuzz FuzzParse -fuzztime=$(FUZZTIME)
+
+test-fuzz-rawbench:
+	go test ./verdict/internal/benchparser/rawbench -run='^$$' -fuzz FuzzParseGoTestBench -fuzztime=$(FUZZTIME)
+	go test ./verdict/internal/benchparser/rawbench -run='^$$' -fuzz FuzzLooksLikeGoTestBench -fuzztime=$(FUZZTIME)
+	go test ./verdict/internal/benchparser/rawbench -run='^$$' -fuzz FuzzParseFile -fuzztime=$(FUZZTIME)
 
 test-e2e: build data
 	@echo "* Running end-to-end tests..."
