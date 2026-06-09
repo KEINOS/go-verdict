@@ -11,8 +11,8 @@ func TestCompare(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		metrics []Metric
 		want    Relation
+		metrics []Metric
 	}{
 		{name: "empty metrics", metrics: nil, want: Inconclusive},
 		{name: "all same", metrics: []Metric{Same, Same}, want: Tie},

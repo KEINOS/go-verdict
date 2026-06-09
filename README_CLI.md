@@ -22,27 +22,29 @@ JSON output is useful for CI, tools, and scripts:
 benchstat old.txt new.txt | verdict --format json
 ```
 
+`verdict hotspot <package>` has its own text and JSON output. Hotspot JSON includes `schema_version`, `classification`, and a stable `reason` field so tools do not need to parse human text.
+
 Example JSON:
 
 ```json
 {
   "verdicts": [
     {
-      "benchmark": "ExampleFast-10",
-      "outcome": "tie",
       "baseline_label": "old.txt",
+      "benchmark": "ExampleFast-10",
       "candidate_label": "new.txt",
+      "reason": "no statistically significant practical difference",
+      "outcome": "tie",
       "metrics": [
         {
           "benchmark": "ExampleFast-10",
           "metric": "sec/op",
+          "direction": "same",
           "delta_pct": 0,
           "p_value": 0.68,
-          "significant": false,
-          "direction": "same"
+          "significant": false
         }
-      ],
-      "reason": "no statistically significant practical difference"
+      ]
     }
   ]
 }

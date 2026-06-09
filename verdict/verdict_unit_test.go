@@ -143,8 +143,8 @@ func TestParseRejectsInvalidOptions(t *testing.T) {
 
 	for _, test := range []struct {
 		name string
-		opts Options
 		want string
+		opts Options
 	}{
 		{name: "negative alpha", opts: Options{Alpha: -0.1}, want: optionAlphaName},
 		{name: "alpha above one", opts: Options{Alpha: 1.1}, want: optionAlphaName},
@@ -976,9 +976,9 @@ func TestRawInconclusiveReasonCodeContracts(t *testing.T) {
 }
 
 type rawReasonCodeContractCase struct {
+	run    func(t *testing.T) Report
 	name   string
 	reason string
-	run    func(t *testing.T) Report
 }
 
 func rawInconclusiveReasonCodeContractCases() []rawReasonCodeContractCase {
@@ -1061,9 +1061,9 @@ func TestCompareRawFilesSampleBoundaries(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
-		count       int
 		wantReason  string
 		wantOutcome Outcome
+		count       int
 	}{
 		{count: StatisticalMinSamples, wantReason: reasonInsufficient, wantOutcome: Inconclusive},
 		{count: RawComparisonMinSamples, wantReason: "", wantOutcome: OldWins},
@@ -1321,9 +1321,9 @@ func TestParseGoTestBenchRawSampleBoundaries(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
-		count       int
 		wantReason  string
 		wantOutcome Outcome
+		count       int
 	}{
 		{count: StatisticalMinSamples, wantReason: reasonInsufficient, wantOutcome: Inconclusive},
 		{count: RawComparisonMinSamples, wantReason: "", wantOutcome: NewWins},

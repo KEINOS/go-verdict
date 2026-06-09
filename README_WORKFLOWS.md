@@ -1,8 +1,20 @@
 # Workflow Details
 
-`verdict` supports three comparison workflows: Alternative, Named File, and Before/After.
+`verdict` supports one hotspot Scout workflow and three comparison Judge workflows: Alternative, Named File, and Before/After.
 
 Auto mode is the default input mode. It detects whether stdin contains `benchstat` output or raw `go test -bench` output, then selects the matching comparison workflow when the input is unambiguous.
+
+## Hotspot Scout
+
+Use this workflow before choosing what to optimize.
+
+```sh
+verdict hotspot ./your/package
+```
+
+The Scout command runs existing benchmarks for one package, collects CPU and allocation profiles in a temporary directory, and suggests the first user-code function to inspect. It does not decide whether a code change is faster. After changing code, use one of the Judge workflows below to compare before and after benchmark results.
+
+If no benchmark workload runs, `verdict hotspot` explains that state and exits without changing user code. Add a `BenchmarkXxx` function or pass `--bench` so the workload covers the code you want to inspect.
 
 ## Alternative Comparison
 

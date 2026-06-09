@@ -65,6 +65,8 @@ Note:
   For stable results, run benchmarks with -count=10 or more.
 
 Commands:
+  hotspot <package>
+      Suggest the first function to inspect from benchmark CPU and allocation profiles.
   skill
       Print the AI Agent skill text.
   version
@@ -94,6 +96,16 @@ Options:
       P-value threshold for statistical significance. Must be greater than 0 and at most 1. Default: 0.05.
   --min-delta value
       Minimum absolute delta percentage to treat as a practical difference. Must be non-negative. Default: 0.0.
+
+Hotspot options:
+  --bench regexp
+      Benchmark regexp for verdict hotspot. Default: .
+  --benchtime duration|Nx
+      Benchmark time or iteration count for verdict hotspot. Default: 1s.
+  --count n
+      Benchmark run count for verdict hotspot. Default: 1.
+  --format text|json
+      Output format for verdict hotspot. Default: text.
 ```
 
 ## Requirements

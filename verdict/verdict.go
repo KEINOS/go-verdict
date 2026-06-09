@@ -89,39 +89,35 @@ const (
 // infer the only two labels under a parent benchmark. CompareRawFiles ignores
 // Mode, Baseline, and Candidate because its labels come from the two files.
 type Options struct {
-	Alpha       float64
-	MinDeltaPct float64
-	Mode        string
 	Baseline    string
 	Candidate   string
+	Mode        string
+	Alpha       float64
+	MinDeltaPct float64
 }
 
 // Comparison is one parsed metric comparison for one benchmark.
-//
-//nolint:tagliatelle // JSON fields keep benchstat snake_case names.
 type Comparison struct {
+	BaselineLabel  string    `json:"-"`
 	Benchmark      string    `json:"benchmark"`
+	CandidateLabel string    `json:"-"`
 	Metric         string    `json:"metric"`
+	Direction      Direction `json:"direction"`
 	DeltaPct       float64   `json:"delta_pct"`
 	PValue         float64   `json:"p_value"`
 	Significant    bool      `json:"significant"`
-	Direction      Direction `json:"direction"`
-	BaselineLabel  string    `json:"-"`
-	CandidateLabel string    `json:"-"`
 }
 
 // BenchmarkVerdict is the final outcome for one benchmark name.
-//
-//nolint:tagliatelle // JSON fields keep benchstat snake_case names.
 type BenchmarkVerdict struct {
-	Benchmark      string       `json:"benchmark"`
-	Outcome        Outcome      `json:"outcome"`
-	Winner         string       `json:"winner,omitempty"`
 	BaselineLabel  string       `json:"baseline_label,omitempty"`
+	Benchmark      string       `json:"benchmark"`
 	CandidateLabel string       `json:"candidate_label,omitempty"`
-	Metrics        []Comparison `json:"metrics"`
 	Reason         string       `json:"reason"`
 	ReasonCode     string       `json:"reason_code,omitempty"`
+	Winner         string       `json:"winner,omitempty"`
+	Outcome        Outcome      `json:"outcome"`
+	Metrics        []Comparison `json:"metrics"`
 }
 
 // Report is the complete parse and evaluation result.

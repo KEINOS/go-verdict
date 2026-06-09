@@ -1,6 +1,5 @@
 //go:build e2e
 
-//nolint:tagliatelle // YAML scenarios use snake_case keys.
 package e2e_test
 
 import (
@@ -18,20 +17,20 @@ const defaultScenarioTimeout = 30 * time.Second
 
 var (
 	errBothStdinSources      = errors.New("must not define both stdin and stdin_file")
-	errCaseNameRequired     = errors.New("case name is required")
+	errCaseNameRequired      = errors.New("case name is required")
 	errMultipleYAMLDocuments = errors.New("scenario file must contain exactly one YAML document")
-	errSuiteCasesRequired   = errors.New("suite cases are required")
-	errSuiteNameRequired    = errors.New("suite name is required")
-	errSuiteRequired        = errors.New("suite is required")
+	errSuiteCasesRequired    = errors.New("suite cases are required")
+	errSuiteNameRequired     = errors.New("suite name is required")
+	errSuiteRequired         = errors.New("suite is required")
 )
 
 // Suite represents a test suite containing multiple test cases.
 type Suite struct {
 	Name        string           `yaml:"name"`
-	Timeout     ScenarioDuration `yaml:"timeout"`
-	Cases       []Case           `yaml:"cases"`
 	ScenarioDir string           `yaml:"-"`
 	RepoRoot    string           `yaml:"-"`
+	Cases       []Case           `yaml:"cases"`
+	Timeout     ScenarioDuration `yaml:"timeout"`
 }
 
 // Case represents a single test case with its configuration and expected outcomes.
@@ -46,9 +45,9 @@ type Case struct {
 
 // Want represents the expected outcomes of a test case, including exit code and assertions for stdout and stderr.
 type Want struct {
-	ExitCode int        `yaml:"exit_code"`
-	Stdout   TextAssert `yaml:"stdout"`
 	Stderr   TextAssert `yaml:"stderr"`
+	Stdout   TextAssert `yaml:"stdout"`
+	ExitCode int        `yaml:"exit_code"`
 }
 
 // TextAssert represents assertions for text output.

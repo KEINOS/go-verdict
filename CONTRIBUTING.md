@@ -103,6 +103,7 @@ Project layout:
 
 ```text
 cmd/verdict/                   CLI entry point
+cmd/verdict/internal/hotspot/  CLI-only hotspot Scout command
 cmd/verdict/internal/skill/    Embedded AI Agent skill text
 verdict/                       Public API, evaluator, and output writer
 verdict/internal/benchparser/  Benchmark input decoders

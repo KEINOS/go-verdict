@@ -6,10 +6,12 @@ import (
 	"strings"
 
 	"github.com/KEINOS/go-verdict/cmd/verdict/internal/appver"
+	"github.com/KEINOS/go-verdict/cmd/verdict/internal/hotspot"
 	"github.com/KEINOS/go-verdict/cmd/verdict/internal/skill"
 )
 
 const (
+	cmdHotspot = "hotspot"
 	cmdSkill   = "skill"
 	cmdVersion = "version"
 )
@@ -29,8 +31,17 @@ func runTopLevelCommand(args []string, output io.Writer) (bool, error) {
 		return commandUnhandled, nil
 	}
 
-	if command != cmdSkill && command != cmdVersion {
+	if command != cmdHotspot && command != cmdSkill && command != cmdVersion {
 		return commandHandled, fmt.Errorf("%w: %s", errUnknownCommand, command)
+	}
+
+	if command == cmdHotspot {
+		err := hotspot.New().Run(args[1:], output)
+		if err != nil {
+			return commandHandled, fmt.Errorf("running hotspot command: %w", err)
+		}
+
+		return commandHandled, nil
 	}
 
 	if len(args) != 1 {

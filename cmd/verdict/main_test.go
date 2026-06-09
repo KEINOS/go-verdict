@@ -167,9 +167,11 @@ func TestRunCLIHelpWritesSamplePolicy(t *testing.T) {
 
 	for _, want := range []string{
 		"Usage:\n  verdict [command] [options]",
-		"Commands:\n  skill",
+		"Commands:\n  hotspot <package>",
+		"  skill",
 		"  version",
 		"Options:\n  --format text|json",
+		"Hotspot options:\n  --bench regexp",
 		"  -v, --version",
 	} {
 		require.Contains(t, out.String(), want,
@@ -194,6 +196,18 @@ func TestRunCLIHelpExplainsInputModes(t *testing.T) {
 		require.Contains(t, out.String(), want,
 			"help output should explain each input mode")
 	}
+}
+
+func TestRunCLIHotspotHelp(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := runCLI([]string{cmdHotspot, flagHelpLong}, strings.NewReader("ignored"), &out)
+	require.NoError(t, err,
+		"hotspot help should succeed")
+	require.Contains(t, out.String(), "Usage:\n  verdict hotspot",
+		"hotspot help should include subcommand usage")
 }
 
 func TestRunCLIVersionRequests(t *testing.T) {
