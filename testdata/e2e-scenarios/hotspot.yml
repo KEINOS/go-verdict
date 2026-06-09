@@ -1,0 +1,37 @@
+name: hotspot
+timeout: 60s
+
+cases:
+  - name: suggest hotspot from benchmark
+    args: ["hotspot", "--bench", "BenchmarkExampleSlow", "--benchtime", "100ms", "./testdata/benchtargets"]
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "./testdata/benchtargets: inspect"
+          - "cpu-hotspot"
+          - "Next:"
+      stderr:
+        equals: ""
+
+  - name: report no benchmark workload
+    args: ["hotspot", "--bench", "DoesNotExist", "--benchtime", "100ms", "./testdata/benchtargets"]
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "./testdata/benchtargets: no benchmark workload ran"
+      stderr:
+        equals: ""
+
+  - name: output hotspot json
+    args: ["hotspot", "--bench", "BenchmarkExampleSlow", "--benchtime", "100ms", "--format", "json", "./testdata/benchtargets"]
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - '"schema_version": 1'
+          - '"reason": "cpu-hotspot"'
+          - '"function": "github.com/KEINOS/go-verdict/testdata/benchtargets.exampleSlow"'
+      stderr:
+        equals: ""

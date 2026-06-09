@@ -31,6 +31,8 @@ Do not overwrite unrelated local changes. Review existing changes before editing
 - `make test`: Run all tests with the race detector and coverage.
 - `make test-fuzz`: Run parser fuzz tests. Use `FUZZTIME=1m` to change the duration per target.
 - `make lint`: Run mutating fixers. It may rewrite Go and Markdown files.
+- `make fieldalign`: Review struct field alignment findings during refactoring. This target is optional and not part of `make lint` or `make check`.
+- `make fieldalign-fix`: Apply fieldalignment fixes. Review the diff before keeping changes because comments, public field order, JSON output order, and readability may be affected.
 - `make build`: Remove `./dist`, then build `./dist/verdict`.
 - `make check`: Run `make test`, `make lint`, and `make e2e`.
 - `make help`: List development targets.
@@ -103,6 +105,7 @@ Project layout:
 
 ```text
 cmd/verdict/                   CLI entry point
+cmd/verdict/internal/hotspot/  CLI-only hotspot Scout command
 cmd/verdict/internal/skill/    Embedded AI Agent skill text
 verdict/                       Public API, evaluator, and output writer
 verdict/internal/benchparser/  Benchmark input decoders

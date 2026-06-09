@@ -18,10 +18,10 @@ const (
 type Comparison struct {
 	Benchmark      string
 	Metric         string
-	DeltaPct       float64
-	PValue         float64
 	BaselineLabel  string
 	CandidateLabel string
+	DeltaPct       float64
+	PValue         float64
 	ApproxEqual    bool
 }
 

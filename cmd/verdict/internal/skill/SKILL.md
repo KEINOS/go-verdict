@@ -37,6 +37,14 @@ If you did not run tests or benchmarks, label commands as planned commands. Do n
 
 ## Choose the Workflow
 
+Use hotspot Scout when the user asks what to optimize first and the package already has benchmarks:
+
+```sh
+verdict hotspot ./your/package
+```
+
+Treat hotspot output as an inspection suggestion only. It is not a keep/reject decision and does not prove that a change is faster. If no benchmark workload runs, add or choose a benchmark that exercises the code before optimizing. After editing code, use a Judge workflow below and report only the measured `verdict` comparison.
+
 Use raw sub-benchmarks when the original and candidate can live in the same benchmark:
 
 ```sh

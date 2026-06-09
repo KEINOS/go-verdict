@@ -37,8 +37,8 @@ type GoTestBench struct {
 
 // File contains one decoded raw benchmark series and input-shape flags.
 type File struct {
-	Name               string
 	Metrics            map[string][]float64
+	Name               string
 	HasBenchmarkRows   bool
 	HasMalformedRows   bool
 	HasUnsupportedRows bool
@@ -46,14 +46,14 @@ type File struct {
 }
 
 type decodedLine struct {
-	name    string
 	metrics map[string]float64
+	name    string
 }
 
 type sample struct {
+	metrics map[string]float64
 	parent  string
 	label   string
-	metrics map[string]float64
 }
 
 // ParseGoTestBench decodes raw go test -bench sub-benchmarks.

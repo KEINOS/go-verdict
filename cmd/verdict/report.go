@@ -28,8 +28,8 @@ var (
 )
 
 type reasonCodeErrorHandler struct {
-	reasonCode string
 	handle     func(verdict.BenchmarkVerdict) error
+	reasonCode string
 }
 
 func reasonCodeErrorHandlers() []reasonCodeErrorHandler {

@@ -7,12 +7,14 @@ run:
 linters:
   default: all
   disable:
-    # Project policy
-    - depguard
-    - testpackage
     # Deprecated linters
     - wsl
     - gomodguard
+    # == Project policy ==
+    - depguard
+    - testpackage
+    # JSON of Go benchmark and tool result commonly use snake_case, so allow.
+    - tagliatelle
   settings:
     paralleltest:
       ignore-missing: false
