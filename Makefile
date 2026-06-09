@@ -4,7 +4,8 @@
 .PHONY: data data-cache-hit data-cache-key data-cache-save data-generate
 .PHONY: data-example-mismatch data-benchstat-repeat-fast data-gotestbench data-insufficient
 .PHONY: e2e
-.PHONY: check-checkmake-exist check-golangci-lint-exist check-markdownlint-cli2-exist check-yamlfmt-exist
+.PHONY: fieldalign fieldalign-fix
+.PHONY: check-checkmake-exist check-fieldalignment-exist check-golangci-lint-exist check-jq-exist check-markdownlint-cli2-exist check-yamlfmt-exist
 .PHONY: lint-e2e lint-go lint-makefile lint-md lint-yaml
 
 VERDICT := ./dist/verdict
@@ -31,6 +32,8 @@ HELP_LINES := \
 	'  make test-fuzz            Run parser fuzz tests. Override duration with FUZZTIME=1m.' \
 	'  make test-e2e             Build verdict, prepare fixtures, then run YAML E2E scenarios.' \
 	'  make lint                 Run mutating fixers: go fix, golangci-lint run --fix, markdownlint-cli2 --fix, yamlfmt.' \
+	'  make fieldalign           Report fieldalignment findings as JSON. Intended for TDD refactor review.' \
+	'  make fieldalign-fix       Apply fieldalignment fixes. Review the diff before keeping changes.' \
 	'  make build                Remove ./dist, then build ./dist/verdict.' \
 	'  make clean-dist           Remove ./dist.' \
 	'  make clean-testdata       Remove generated testdata/e2e-fixtures/*.txt files.' \
@@ -60,8 +63,14 @@ check: test lint e2e
 check-checkmake-exist:
 	@command -v checkmake >/dev/null 2>&1 || (echo "FAIL: checkmake command is not installed" && exit 1)
 
+check-fieldalignment-exist:
+	@command -v fieldalignment >/dev/null 2>&1 || (echo "FAIL: fieldalignment command is not installed" && exit 1)
+
 check-golangci-lint-exist:
 	@command -v golangci-lint >/dev/null 2>&1 || (echo "FAIL: golangci-lint command is not installed" && exit 1)
+
+check-jq-exist:
+	@command -v jq >/dev/null 2>&1 || (echo "FAIL: jq command is not installed" && exit 1)
 
 check-markdownlint-cli2-exist:
 	@command -v markdownlint-cli2 >/dev/null 2>&1 || (echo "FAIL: markdownlint-cli2 command is not installed" && exit 1)
@@ -124,6 +133,13 @@ data-insufficient:
 	go test -run='^$$' -bench=BenchmarkEnhance -benchmem -count=2 ./testdata/benchtargets > ./testdata/e2e-fixtures/bench_gotestbench_count2.txt
 
 e2e: test-e2e
+
+fieldalign: check-fieldalignment-exist check-jq-exist
+	@out="$$(fieldalignment -json ./... | jq -M .)"; printf '* Running field alignment check ...\n'; if [ "$$out" = "{}" ]; then printf '0 issues.\n'; else printf '%s\n' "$$out"; exit 1; fi
+
+fieldalign-fix: check-fieldalignment-exist check-jq-exist
+	@fieldalignment -fix ./...
+	@out="$$(fieldalignment -json ./... | jq -M .)"; printf '* Running field alignment check w/fix...\n'; if [ "$$out" = "{}" ]; then printf '0 issues.\n'; else printf '%s\n' "$$out"; exit 1; fi
 
 lint: lint-e2e lint-go lint-makefile lint-md lint-yaml
 
