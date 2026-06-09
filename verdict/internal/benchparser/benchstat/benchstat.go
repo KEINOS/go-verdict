@@ -39,10 +39,10 @@ var (
 
 // Result contains decoded comparisons or a neutral inconclusive input state.
 type Result struct {
-	Comparisons        []benchparser.Comparison
 	InconclusiveReason string
 	BaselineLabel      string
 	CandidateLabel     string
+	Comparisons        []benchparser.Comparison
 	IncludeLabels      bool
 }
 
@@ -56,10 +56,10 @@ func Parse(input string) (Result, error) {
 }
 
 type csvParseState struct {
-	rows                    []benchparser.Comparison
 	metric                  string
 	baselineLabel           string
 	candidateLabel          string
+	rows                    []benchparser.Comparison
 	deltaIndex              int
 	pValueIndex             int
 	baseIndex               int
@@ -245,10 +245,10 @@ func (state *csvParseState) inconclusiveResult(reason string, includeLabels bool
 }
 
 type textParseState struct {
-	rows                      []benchparser.Comparison
 	currentMetric             string
 	baselineLabel             string
 	candidateLabel            string
+	rows                      []benchparser.Comparison
 	hasBenchmarkSetMismatch   bool
 	hasComparisonRowsWithoutP bool
 }

@@ -320,8 +320,8 @@ func TestRunCLIRejectsInvalidStatisticalOptions(t *testing.T) {
 
 	for _, test := range []struct {
 		name string
-		args []string
 		want string
+		args []string
 	}{
 		{name: "zero alpha", args: []string{flagAlpha, "0"}, want: optionAlpha},
 		{name: "negative alpha", args: []string{flagAlpha, "-0.1"}, want: optionAlpha},
@@ -525,8 +525,8 @@ func TestReportErrorBranches(t *testing.T) {
 			"mapped reason code should have an explicit CLI expectation")
 
 		test := struct {
-			reasonCode string
 			wantErr    error
+			reasonCode string
 		}{
 			reasonCode: handler.reasonCode,
 			wantErr:    wantErr,

@@ -13,10 +13,10 @@ const (
 )
 
 type versionRunCase struct {
-	name      string
 	buildInfo *debug.BuildInfo
-	ok        bool
+	name      string
 	want      string
+	ok        bool
 }
 
 func TestCommandRun(t *testing.T) {

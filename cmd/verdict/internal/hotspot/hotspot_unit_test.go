@@ -22,10 +22,10 @@ func TestParseArgsValidation(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		args    []string
-		want    options
 		wantErr error
+		name    string
+		want    options
+		args    []string
 	}{
 		{
 			name: "defaults",
@@ -358,13 +358,13 @@ func TestCommandRunHardErrorBranches(t *testing.T) {
 
 func hardErrorCases() []struct {
 	name    string
-	outputs []fakeOutput
 	want    string
+	outputs []fakeOutput
 } {
 	return []struct {
 		name    string
-		outputs []fakeOutput
 		want    string
+		outputs []fakeOutput
 	}{
 		{name: "resolve", outputs: []fakeOutput{{out: nil, err: errFakeRun}}, want: "resolving package"},
 		{name: "compile", outputs: fakeOutputsUntilCompileError(), want: "compiling benchmark binary"},
@@ -445,8 +445,8 @@ func TestResolvePackageRejectsMultiPackage(t *testing.T) {
 }
 
 type fakeOutput struct {
-	out []byte
 	err error
+	out []byte
 }
 
 type fakeRunner struct {
