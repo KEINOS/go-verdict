@@ -4,6 +4,7 @@
 .vscode
 .antigravitycli
 .agent-notes/
+graphify-out/
 cache/
 
 # Exclude artifacts
