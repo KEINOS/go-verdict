@@ -1,7 +1,10 @@
 # Ignore everything by default.
-# Due to ignoring test artifacts and generated files.
+# Due to ignoring AI generated artifacts and etc.
+
 *
 */
+
+# === Allow-List ===
 
 !.gitignore
 !dependabot.yml

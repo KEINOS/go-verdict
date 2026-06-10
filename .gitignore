@@ -38,3 +38,8 @@
 !tools/**
 !testdata/
 !testdata/**
+!testdata/e2e-fixtures/
+
+# Exclude generated benchmark fixtures but the directory itself.
+testdata/e2e-fixtures/**
+!testdata/e2e-fixtures/.gitkeep
