@@ -1,28 +1,45 @@
-# Exclude AI related files
-*.md
-.claude
-.vscode
-.antigravitycli
-.agent-notes/
-graphify-out/
-cache/
+# Ignore everything by default.
+# Due to ignoring test artifacts and generated files.
+*
+*/
 
-# Exclude artifacts
-*.txt
-main
-dist
-testdata/*.txt
+# === Allow-List ===
 
-# Include specific files
-!.github/SECURITY.md
-!.vscode
+# Dot/config files.
+!.gitignore
+!.editorconfig
+!.golangci.yml
+!.markdownlint-cli2.yaml
+!.yamlfmt
+
+# Dev/config dirs.
+!.github/
+!.github/**
+!.vscode/
+!.vscode/**
+!Makefile
+
+# Root docs.
 !README.md
 !README_CLI.md
 !README_LIB.md
 !README_WORKFLOWS.md
 !CONTRIBUTING.md
-!cmd/verdict/internal/skill/SKILL.md
-!cmd/verdict/internal/skill/README.md
-!testdata/README.md
-!testdata/benchtargets/*
-!testdata/e2e-scenarios/*
+!LICENSE.md
+
+# Go module files.
+!go.mod
+!go.sum
+
+# Source/test trees.
+!cmd/
+!cmd/**
+!tools/
+!tools/**
+!testdata/
+!testdata/**
+!testdata/e2e-fixtures/
+
+# Exclude generated benchmark fixtures but the directory itself.
+testdata/e2e-fixtures/**
+!testdata/e2e-fixtures/.gitkeep

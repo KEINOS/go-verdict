@@ -8,6 +8,7 @@ Thanks for improving `go-verdict`. Keep changes small. When behavior changes, up
 - [Development Commands](#development-commands)
 - [End-to-End Checks](#end-to-end-checks)
 - [Benchmark Fixtures](#benchmark-fixtures)
+- [Git Ignore Allow-List](#git-ignore-allow-list)
 - [Architecture And Layout](#architecture-and-layout)
 - [Error Message Style](#error-message-style)
 - [Adding An Input Or Output Format](#adding-an-input-or-output-format)
@@ -88,6 +89,23 @@ make clean-dist      # remove ./dist
 make clean-testdata  # remove generated testdata/e2e-fixtures/*.txt files
 make clean           # remove both
 ```
+
+## Git Ignore Allow-List
+
+The root `.gitignore` uses an explicit allow-list. New files are ignored until their path, directory, or extension is explicitly included.
+
+When adding a new tracked area, update `.gitignore` or the nearest nested `.gitignore` in the same change. Keep generated output excluded after broad directory includes.
+
+Check both sides before reporting:
+
+```sh
+git status --short --untracked-files=all
+git status --short --ignored
+git ls-files -o --exclude-standard
+git ls-files -o -i --exclude-standard
+```
+
+Expected generated or local paths such as `dist/`, `cache/`, `.agent-notes/`, `.tmp-verdict/`, `graphify-out/`, and `testdata/e2e-fixtures/` should remain ignored.
 
 ## Architecture And Layout
 

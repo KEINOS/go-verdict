@@ -1,0 +1,15 @@
+# Ignore everything by default.
+# Due to ignoring AI generated artifacts and etc.
+
+*
+*/
+
+# === Allow-List ===
+
+!.gitignore
+!dependabot.yml
+!SECURITY.md
+
+!workflows/
+!workflows/basic_sec_check.yml
+!workflows/platform_test.yml
