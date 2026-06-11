@@ -1,6 +1,6 @@
 ---
 name: verdict
-description: Use for Go performance requests where measured evidence is needed to decide whether an optimization should be kept or rejected. Covers creating or choosing benchmarks, finding hotspots, comparing before/after or A/B results, and judging existing benchmark data.
+description: Use for Go performance requests, including "optimize this Go code", when measured evidence should guide benchmark creation, hotspot discovery, before/after or A/B comparison, and keep/reject decisions, even if benchmarks must be bootstrapped first.
 license: MIT
 metadata:
   author: KEINOS and The go-verdict Contributors
@@ -9,7 +9,7 @@ metadata:
 
 # Verdict
 
-Use `verdict` command to build Go benchmark evidence and decide keep/reject. It judges data; it does not optimize code.
+Use `verdict` command to guide Go optimization with benchmark evidence and keep/reject decisions. Use this skill even when benchmarks are missing; first bootstrap representative evidence, then compare results and decide whether a candidate survives.
 
 Keep only when every relevant `verdict` line favors candidate (`new-wins`, `<candidate> wins`, `new.txt wins`), or user accepts each `trade-off`. Reject/revise when any line favors old, is `tie`, or is `inconclusive`.
 
@@ -28,6 +28,7 @@ Correctness gates come before verdict. `verdict` does not prove behavior. If can
 - Decide from one chosen evidence path. If multiple `verdict` commands disagree, report revise/no decision and explain the mismatch.
 - Before/after gate is `benchstat old.txt new.txt | verdict`, never raw `benchstat`, geomean, or manual judgment.
 - Keep benchmark names, sub-benchmarks, inputs, and labels stable between `old.txt` and `new.txt`. If shape changes, recapture both.
+- Labels named `original`, `baseline`, `enhanced`, or `candidate` must mean real implementations. If they only repeat the edited public function, fix the benchmark shape before baseline capture; do not hide the issue by filtering one misleading label.
 - Capture before/after from same package path; do not move old code to `bench-old`.
 - Claim verdict, pass, win, regression, allocation, or latency only after exact command ran.
 - If `benchstat old.txt new.txt` succeeds, immediately pipe it to `verdict`.
@@ -35,6 +36,7 @@ Correctness gates come before verdict. `verdict` does not prove behavior. If can
 - Do not keep candidate with unaccepted semantic caveat, even when `verdict` favors it.
 - Keep semantic claims scoped to the tests or probes actually run.
 - If `verdict` did not run, report no measured verdict and no keep/reject decision.
+- Some inconclusive states are CLI errors, such as insufficient samples or benchmark-set mismatch. Treat those as no measured verdict and no decision; fix the setup or collect more samples, then rerun.
 - If `benchstat` mismatch or parse fails, fix names/input before deciding.
 
 ## Benchmark Readiness
@@ -55,9 +57,9 @@ Use hotspot only to find inspection targets:
 verdict hotspot ./your/package
 ```
 
-Hotspot does not prove speed or keep/reject. If no workload runs, add benchmark first. Do not special-case args from `inspect <umbrella function>` alone.
+Hotspot does not prove speed or keep/reject. If no workload runs, add benchmark first. Do not fix the optimization target solely from a hotspot `inspect <function>` suggestion; inspect the call tree first, especially for dispatchers or umbrella functions.
 
-Use same-run A/B only when one benchmark parent runs distinct implementations:
+Use same-run A/B only when one benchmark parent runs distinct implementations. Exploration example:
 
 ```sh
 go test -run='^$' -bench=BenchmarkMyFunc -benchmem -count=3 ./your/package | verdict
@@ -73,7 +75,7 @@ go test -run='^$' -bench=BenchmarkMyFunc -benchmem -count=3 ./your/package | ver
 
 Separate benchmark functions are usually not enough. If both labels call same edited function, use before/after files or separate helpers.
 
-Use before/after for one implementation edited across time:
+Use before/after for one implementation edited across time. Exploration example:
 
 ```sh
 go test -run='^$' -bench=BenchmarkMyFunc -benchmem -count=3 ./your/package > old.txt
@@ -81,9 +83,9 @@ go test -run='^$' -bench=BenchmarkMyFunc -benchmem -count=3 ./your/package > new
 benchstat old.txt new.txt | verdict
 ```
 
-If old/new files contain `/original` and `/enhanced` but both call edited function, treat them as before/after scenario labels, not same-run A/B proof.
+If old/new files contain `/original` and `/enhanced` but both call edited function, they are not same-run A/B proof. Rename them to scenario labels or remove the split before capture; if already captured, recapture both sides.
 
-Use `-count=3` first. Increase to `-count=10+` only for noisy, inconclusive, or keep-worthy results needing stronger confidence.
+For AI-agent exploration, first use `-count=3` to `-count=5` to avoid expensive false starts. For final keep/reject decisions, insufficient-sample errors, close/noisy results, inconclusive results, or mixed trade-offs, run `-count=10` or more.
 
 Use raw file A/B only for existing files, differing names, or data that cannot validly pass through `benchstat old.txt new.txt | verdict`:
 
@@ -93,7 +95,7 @@ verdict -a fast.txt -b slow.txt
 
 ## Minimal Loop
 
-1. Check benchmark readiness; bootstrap if needed.
+1. Check benchmark readiness and benchmark labels/call paths; bootstrap or fix misleading benchmark shape before baseline capture.
 2. Choose command by evidence shape.
 3. Preserve original and add candidate.
 4. Run correctness tests; reject semantic regressions and unaccepted caveats.
@@ -109,7 +111,7 @@ verdict -a fast.txt -b slow.txt
 - `trade-off`: reject/revise unless user accepts regression.
 - `inconclusive`: collect more samples or fix setup.
 
-`verdict` uses Pareto aggregation: better in one or more metrics and worse in none. Keep only when every relevant line favors candidate, except accepted trade-offs. Exclude irrelevant sub-benchmarks before capture; do not dismiss `old.txt wins` after seeing it.
+`verdict` uses Pareto aggregation: better in one or more metrics and worse in none. Keep only when every relevant line favors candidate, except accepted trade-offs. Mixed output is a measured result: report revise/reject instead of continuing silently or averaging wins. Exclude irrelevant sub-benchmarks before capture; do not dismiss `old.txt wins` after seeing it.
 
 ## Overfitting
 
