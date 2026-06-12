@@ -1,0 +1,33 @@
+name: cli-errors
+timeout: 10s
+
+cases:
+  - name: empty stdin returns guidance
+    args: []
+    stdin: ""
+    want:
+      exit_code: 1
+      stderr:
+        contains:
+          - "no benchmark input on stdin"
+          - "benchstat old.txt new.txt | verdict"
+          - "verdict help"
+
+  - name: unknown command lists valid commands
+    args: ["optimize"]
+    want:
+      exit_code: 1
+      stderr:
+        contains:
+          - "unknown command: optimize"
+          - "expected one of: help, hotspot, skill, version"
+
+  - name: unknown flag points to help
+    args: ["--no-such-flag"]
+    stdin: ""
+    want:
+      exit_code: 1
+      stderr:
+        contains:
+          - "parsing flags"
+          - "run 'verdict --help' for usage"

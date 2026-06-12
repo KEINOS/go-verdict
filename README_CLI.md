@@ -104,6 +104,15 @@ Known reason codes include:
 | `ambiguous-labels` | Raw go test -bench input could not select one baseline/candidate pair from labels. |
 | `ambiguous-benchmark` | A raw file contains more than one benchmark series. |
 
+## Exit Status
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | A verdict was produced, including `tie`, `trade-off`, and reported `inconclusive` outcomes. |
+| `1` | An error stopped the verdict: invalid flags, unreadable or empty input, benchmark-set mismatch, or insufficient raw samples. |
+
+The exit code does not encode the outcome. For CI gates that must fail on `old-wins` or `trade-off`, parse the `--format json` output or use the library as shown in [Library Usage](README_LIB.md).
+
 ## Related Documentation
 
 - [go-verdict](README.md): installation and complete CLI help.

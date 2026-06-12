@@ -18,7 +18,7 @@ func main() {
   opt.Alpha = 0.1     // default is 0.05, use a finite value greater than 0 and at most 1
   opt.MinDeltaPct = 0 // default is 0, must be finite and non-negative
 
-  report, err := verdict.Parse(os.Stdin, *opt)
+  report, err := verdict.Parse(os.Stdin, opt)
   if err != nil {
     panic(err)
   }

@@ -517,6 +517,68 @@ func TestRunCLIGoTestBenchScannerErrorIsParseError(t *testing.T) {
 	}
 }
 
+func TestRunCLIEmptyStdinReturnsGuidance(t *testing.T) {
+	t.Parallel()
+
+	for _, input := range []string{"", " \n\t\n"} {
+		err := runCLI(nil, strings.NewReader(input), &strings.Builder{})
+		require.ErrorIs(t, err, errNoStdinInput,
+			"blank stdin should return the no-input error")
+
+		for _, want := range []string{
+			"benchstat old.txt new.txt | verdict",
+			"verdict help",
+		} {
+			require.ErrorContains(t, err, want,
+				"no-input error should include actionable guidance")
+		}
+	}
+}
+
+func TestRunCLITerminalStdinReturnsGuidance(t *testing.T) {
+	t.Parallel()
+
+	// /dev/null is a character device, like an interactive terminal, so the
+	// CLI must fail fast instead of blocking on a read that never ends.
+	devNull, err := os.Open(os.DevNull)
+	require.NoError(t, err,
+		"failed to open the null device")
+
+	t.Cleanup(func() { _ = devNull.Close() })
+
+	err = runCLI(nil, devNull, &strings.Builder{})
+	require.ErrorIs(t, err, errNoStdinInput,
+		"character-device stdin should return the no-input error")
+}
+
+func TestIsInteractiveTerminal(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, isInteractiveTerminal(strings.NewReader("data")),
+		"plain readers should not count as interactive terminals")
+
+	regular, err := os.CreateTemp(t.TempDir(), "stdin-*.txt")
+	require.NoError(t, err,
+		"failed to create temp file")
+
+	t.Cleanup(func() { _ = regular.Close() })
+
+	require.False(t, isInteractiveTerminal(regular),
+		"regular files should not count as interactive terminals")
+
+	devNull, err := os.Open(os.DevNull)
+	require.NoError(t, err,
+		"failed to open the null device")
+
+	t.Cleanup(func() { _ = devNull.Close() })
+
+	require.True(t, isInteractiveTerminal(devNull),
+		"character devices should count as interactive terminals")
+
+	require.False(t, isInteractiveTerminal(failingStatter{}),
+		"stat failures should fall back to non-interactive")
+}
+
 func TestRunCLIReadErrorContainsContext(t *testing.T) {
 	t.Parallel()
 
@@ -733,6 +795,16 @@ type failingReader struct{}
 
 func (failingReader) Read(_ []byte) (int, error) {
 	return 0, errTestWrite
+}
+
+type failingStatter struct{}
+
+func (failingStatter) Read(_ []byte) (int, error) {
+	return 0, errTestWrite
+}
+
+func (failingStatter) Stat() (os.FileInfo, error) {
+	return nil, errTestWrite
 }
 
 type failingSubcmd struct{}

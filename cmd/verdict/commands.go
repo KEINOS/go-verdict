@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/KEINOS/go-verdict/cmd/verdict/internal/appver"
@@ -48,7 +50,10 @@ func runTopLevelCommand(args []string, output io.Writer) (bool, error) {
 
 	handler, ok := commandHandlers()[command]
 	if !ok {
-		return commandHandled, fmt.Errorf("%w: %s", errUnknownCommand, command)
+		return commandHandled, fmt.Errorf(
+			"%w: %s (expected one of: %s)",
+			errUnknownCommand, command, strings.Join(commandNames(), ", "),
+		)
 	}
 
 	return commandHandled, handler(args[1:], output)
@@ -109,6 +114,10 @@ func runSubcmd(command subcmd, output io.Writer, addTrailingNewline bool) error 
 
 func runVersionCommand(output io.Writer) error {
 	return runSubcmd(appver.New(), output, true)
+}
+
+func commandNames() []string {
+	return slices.Sorted(maps.Keys(commandHandlers()))
 }
 
 func topLevelCommand(args []string) (string, bool) {

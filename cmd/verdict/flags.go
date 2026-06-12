@@ -66,7 +66,7 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 
 	err := flagSet.Parse(args)
 	if err != nil {
-		return nil, cliOptions{}, fmt.Errorf("%w: %w", errParsingFlags, err)
+		return nil, cliOptions{}, fmt.Errorf("%w: %w (run 'verdict --help' for usage)", errParsingFlags, err)
 	}
 
 	if opts.Mode != verdict.ModeAuto && opts.Mode != verdict.ModeBenchstat && opts.Mode != verdict.ModeGoTestBench {

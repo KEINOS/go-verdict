@@ -143,7 +143,7 @@ If one side wins, `verdict` uses the file labels from the `benchstat` header:
 ExampleFast-10: new.txt wins
 ```
 
-> [!INFO]
+> [!NOTE]
 > `verdict` parses the [Go benchmark format](https://go.googlesource.com/proposal/+/master/design/14313-benchmark-format.md) and `benchstat` output. Therefore, you can use it with any tool that produces compatible output.
 > For example, you can also compare the speed of the Go compiler using [compilebench](https://pkg.go.dev/golang.org/x/tools/cmd/compilebench) and [toolstash](https://pkg.go.dev/golang.org/x/tools/cmd/toolstash).
 >

@@ -18,6 +18,14 @@ Use `verdict` when you need an objective keep-or-discard decision for your code 
     BenchmarkMyHeavyFunc: enhanced wins
     ```
 
+- Not sure where to start? Let the benchmark profiles point at the first function to inspect:
+
+    ```shellsession
+    % verdict hotspot ./your/package
+    ./your/package: inspect mypkg.CountASCIIWords (cpu-hotspot; cpu flat 85.7%, cpu cum 90.5%)
+    Next: Optimize a candidate, then judge before/after benchmark results with verdict.
+    ```
+
 `verdict` helps you answer key questions after changing code:
 
 - Is it faster?
@@ -145,10 +153,11 @@ make build
 
 The skill is intentionally compact. It keeps decision rules in context and routes detailed mechanics to `verdict help <topic>`, so agents with small context windows fetch guidance only when needed.
 
-Export the canonical guidance with:
+Export the canonical guidance into the directory your agent loads skills from. For example, for Claude Code:
 
 ```sh
-verdict skill > SKILL.md
+mkdir -p .claude/skills/verdict
+verdict skill > .claude/skills/verdict/SKILL.md
 ```
 
 The canonical source is [cmd/verdict/internal/skill/SKILL.md](cmd/verdict/internal/skill/SKILL.md).

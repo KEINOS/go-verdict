@@ -17,6 +17,7 @@ var (
 	errInsufficientSamples   = errors.New("insufficient samples")
 	errUnexpectedCommandArgs = errors.New("command does not accept extra arguments")
 	errUnknownCommand        = errors.New("unknown command")
+	errNoStdinInput          = errors.New("no benchmark input on stdin")
 	errUseBothAB             = errors.New("use both -a and -b to compare raw benchmark files")
 	errUnknownFormat         = errors.New("unknown format")
 	errParsingInput          = errors.New("parsing input")
@@ -52,9 +53,17 @@ func buildReport(input io.Reader, opts *verdict.Options, cliOpts cliOptions) (ve
 		return buildRawFileReport(opts, cliOpts)
 	}
 
+	if isInteractiveTerminal(input) {
+		return verdict.Report{}, noStdinInputError()
+	}
+
 	inputBytes, err := io.ReadAll(input)
 	if err != nil {
 		return verdict.Report{}, fmt.Errorf("%w: %w", errParsingInput, err)
+	}
+
+	if len(bytes.TrimSpace(inputBytes)) == 0 {
+		return verdict.Report{}, noStdinInputError()
 	}
 
 	report, err := verdict.Parse(bytes.NewReader(inputBytes), *opts)
@@ -63,6 +72,32 @@ func buildReport(input io.Reader, opts *verdict.Options, cliOpts cliOptions) (ve
 	}
 
 	return report, nil
+}
+
+// isInteractiveTerminal reports whether input reads from a terminal-like
+// character device, where waiting for piped benchmark data would block.
+func isInteractiveTerminal(input io.Reader) bool {
+	file, ok := input.(interface{ Stat() (os.FileInfo, error) })
+	if !ok {
+		return false
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+
+	return info.Mode()&os.ModeCharDevice != 0
+}
+
+func noStdinInputError() error {
+	return fmt.Errorf(
+		"%w\npipe benchmark results to verdict, for example:\n"+
+			"  benchstat old.txt new.txt | verdict\n"+
+			"  go test -run='^$' -bench=. -benchmem -count=10 ./pkg | verdict\n"+
+			"or compare raw files with -a and -b. Run 'verdict help' for workflow guidance",
+		errNoStdinInput,
+	)
 }
 
 func buildRawFileReport(opts *verdict.Options, cliOpts cliOptions) (verdict.Report, error) {
