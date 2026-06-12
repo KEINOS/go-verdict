@@ -31,3 +31,14 @@ cases:
         contains:
           - "parsing flags"
           - "run 'verdict --help' for usage"
+
+  - name: unknown required outcome lists valid outcomes
+    args: ["--require", "faster"]
+    stdin: ""
+    want:
+      exit_code: 1
+      stderr:
+        contains:
+          - "unknown required outcome"
+          - "new-wins"
+          - "trade-off"

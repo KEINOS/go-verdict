@@ -15,8 +15,8 @@ import (
 
 func main() {
   opt := verdict.NewOptions()
-  opt.Alpha = 0.1     // default is 0.05, use a finite value greater than 0 and at most 1
-  opt.MinDeltaPct = 0 // default is 0, must be finite and non-negative
+  opt.Alpha = 0.1 // default is 0.05, use a finite value greater than 0 and at most 1
+  opt = opt.WithMinDeltaPct(0) // default is 2.0, explicit 0 counts every significant delta
 
   report, err := verdict.Parse(os.Stdin, opt)
   if err != nil {
@@ -32,11 +32,12 @@ func main() {
 
 - `verdict.NewOptions()` returns the same safe defaults as the CLI:
   - verdict.Options.Alpha = 0.05
-  - verdict.Options.MinDeltaPct = 0
+  - verdict.Options.MinDeltaPct = verdict.DefaultMinDeltaPct
   - verdict.Options.Mode = verdict.ModeAuto
   - verdict.Options.Baseline = ""
   - verdict.Options.Candidate = ""
 - If you set `Alpha`, use a finite value greater than `0` and at most `1`; `MinDeltaPct` must be finite and non-negative.
+- The zero value `verdict.Options{}` uses defaults, including `DefaultMinDeltaPct`. Use `verdict.NewOptions().WithMinDeltaPct(0)` when every statistically significant delta should count.
 - Supported mode constants are `verdict.ModeAuto`, `verdict.ModeBenchstat`, and `verdict.ModeGoTestBench`.
 
 ## Parse Raw Go Test Bench Input
@@ -91,7 +92,13 @@ if err != nil {
 
 ## Use Outcomes In CI
 
-Use report outcomes directly in CI checks:
+The CLI can gate outcomes directly:
+
+```sh
+benchstat old.txt new.txt | verdict --require new-wins
+```
+
+Go programs can use report outcomes directly:
 
 ```go
 report, err := verdict.Parse(os.Stdin, verdict.NewOptions())

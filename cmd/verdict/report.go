@@ -18,6 +18,7 @@ var (
 	errUnexpectedCommandArgs = errors.New("command does not accept extra arguments")
 	errUnknownCommand        = errors.New("unknown command")
 	errNoStdinInput          = errors.New("no benchmark input on stdin")
+	errUnknownRequired       = errors.New("unknown required outcome")
 	errUseBothAB             = errors.New("use both -a and -b to compare raw benchmark files")
 	errUnknownFormat         = errors.New("unknown format")
 	errParsingInput          = errors.New("parsing input")

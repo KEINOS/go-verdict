@@ -19,6 +19,7 @@ const (
 	flagAlpha       = "--alpha"
 	flagMinDelta    = "--min-delta"
 	flagMode        = "--mode"
+	flagRequire     = "--require"
 	formatText      = "text"
 	formatJSON      = "json"
 	removedMode     = "alternatives"
@@ -143,6 +144,65 @@ func TestRunCLIJSONFormat(t *testing.T) {
 
 	require.Contains(t, out.String(), `"outcome": "new-wins"`,
 		"json output should include new-wins outcome")
+}
+
+func TestRunCLIRequireAllowsMatchingOutcomes(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := runCLI([]string{flagRequire, string(verdict.NewWins)}, strings.NewReader(winningInput), &out)
+	require.NoError(t, err,
+		"matching required outcome should succeed")
+	require.Contains(t, out.String(), "Foo-8: new wins",
+		"report should still be written before require gate succeeds")
+}
+
+func TestRunCLIRequireRejectsNonMatchingOutcomesAfterReport(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := runCLI([]string{flagRequire, string(verdict.OldWins)}, strings.NewReader(winningInput), &out)
+	require.ErrorIs(t, err, errRequiredOutcome,
+		"non-matching required outcome should fail")
+	require.ErrorContains(t, err, "Foo-8: new-wins",
+		"error should name the benchmark and outcome that missed the gate")
+	require.Contains(t, out.String(), "Foo-8: new wins",
+		"report should be written before require gate fails")
+}
+
+func TestRunCLIRequireRejectsUnknownOutcome(t *testing.T) {
+	t.Parallel()
+
+	err := runCLI([]string{flagRequire, "faster"}, strings.NewReader(winningInput), &strings.Builder{})
+	require.ErrorIs(t, err, errUnknownRequired,
+		"unknown required outcome should fail during flag initialization")
+	require.ErrorContains(t, err, "new-wins",
+		"error should list valid outcomes")
+}
+
+func TestRunCLIMinDeltaDefaultAndExplicitZero(t *testing.T) {
+	t.Parallel()
+
+	input := "name          old time/op  new time/op  delta\n" +
+		"Foo-8         10.0ns ± 1%   9.9ns ± 1%  -1.00% (p=0.001 n=10+10)\n"
+
+	var defaultOut strings.Builder
+
+	err := runCLI(nil, strings.NewReader(input), &defaultOut)
+	require.NoError(t, err,
+		"default min-delta should parse successfully")
+	require.Equal(t, "Foo-8: tie\n", defaultOut.String(),
+		"default min-delta should treat a 1% change as tie")
+
+	var zeroOut strings.Builder
+
+	err = runCLI([]string{flagMinDelta, "0"}, strings.NewReader(input), &zeroOut)
+	require.NoError(t, err,
+		"explicit zero min-delta should parse successfully")
+	require.Equal(t, "Foo-8: new wins\n", zeroOut.String(),
+		"explicit zero min-delta should count the 1% significant change")
 }
 
 func TestRunCLIHelpWritesSamplePolicy(t *testing.T) {

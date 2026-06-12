@@ -1,6 +1,6 @@
 # CLI Details
 
-This guide explains `verdict` command output, thresholds, and result meanings. See [Workflow Details](README_WORKFLOWS.md) for complete comparison examples.
+This guide explains `verdict` command output, thresholds, exit gates, and result meanings. See [Workflow Details](README_WORKFLOWS.md) for complete comparison examples.
 
 ## Help Topics
 
@@ -64,7 +64,11 @@ benchstat old.txt new.txt | verdict --alpha 0.05 --min-delta 2.0
 
 With this command, a metric must have `p <= 0.05` and at least `2.0%` change to count as improved or worsened.
 
+The default practical threshold is `--min-delta 2.0`, so smaller statistically significant changes are treated as `tie`. Lower it only when very small changes are meaningful for your workload.
+
 For raw benchmark input, p-values are approximate and become more trustworthy as sample counts rise.
+
+When many benchmarks and metrics are compared at once, false positives become more likely. Treat mixed or surprising outcomes as a reason to rerun targeted benchmarks, increase sample counts, or raise `--min-delta`.
 
 ## Verdicts
 
@@ -111,7 +115,13 @@ Known reason codes include:
 | `0` | A verdict was produced, including `tie`, `trade-off`, and reported `inconclusive` outcomes. |
 | `1` | An error stopped the verdict: invalid flags, unreadable or empty input, benchmark-set mismatch, or insufficient raw samples. |
 
-The exit code does not encode the outcome. For CI gates that must fail on `old-wins` or `trade-off`, parse the `--format json` output or use the library as shown in [Library Usage](README_LIB.md).
+Use `--require` when the exit code should encode allowed outcomes:
+
+```sh
+benchstat old.txt new.txt | verdict --require new-wins
+```
+
+With `--require new-wins`, the report is still written, but the command exits `1` unless every verdict is `new-wins`. Use comma-separated outcomes such as `--require new-wins,tie` when more than one outcome should pass.
 
 ## Related Documentation
 

@@ -1,0 +1,57 @@
+name: require
+timeout: 10s
+
+cases:
+  - name: require new wins succeeds
+    args: ["--require", "new-wins"]
+    stdin: |
+      name          old time/op  new time/op  delta
+      Foo-8         10.0ns ± 1%   8.0ns ± 1%  -20.00% (p=0.001 n=10+10)
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "Foo-8: new wins"
+      stderr:
+        equals: ""
+
+  - name: require old wins fails after report
+    args: ["--require", "old-wins"]
+    stdin: |
+      name          old time/op  new time/op  delta
+      Foo-8         10.0ns ± 1%   8.0ns ± 1%  -20.00% (p=0.001 n=10+10)
+    want:
+      exit_code: 1
+      stdout:
+        contains:
+          - "Foo-8: new wins"
+      stderr:
+        contains:
+          - "required outcome not met"
+          - "Foo-8: new-wins"
+
+  - name: default min delta treats small win as tie
+    args: []
+    stdin: |
+      name          old time/op  new time/op  delta
+      Foo-8         10.0ns ± 1%   9.9ns ± 1%  -1.00% (p=0.001 n=10+10)
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "Foo-8: tie"
+      stderr:
+        equals: ""
+
+  - name: explicit zero min delta allows small win
+    args: ["--min-delta", "0"]
+    stdin: |
+      name          old time/op  new time/op  delta
+      Foo-8         10.0ns ± 1%   9.9ns ± 1%  -1.00% (p=0.001 n=10+10)
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "Foo-8: new wins"
+      stderr:
+        equals: ""

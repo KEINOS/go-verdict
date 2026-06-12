@@ -1,8 +1,8 @@
 # go-verdict
 
-Turn Go benchmark results into a winner, tie, or trade-off.
+Objective benchmark decisions for Go optimization loops.
 
-Use `verdict` when you need an objective keep-or-discard decision for your code enhancements.
+Use `verdict` when CI, scripts, or AI agents need a repeatable keep-or-reject gate from Go benchmark evidence.
 
 - Compare benchmark results before and after a change:
 
@@ -28,13 +28,12 @@ Use `verdict` when you need an objective keep-or-discard decision for your code 
 
 `verdict` helps you answer key questions after changing code:
 
-- Is it faster?
-- Is it slower?
-- Is the difference just noise?
-- Is there a trade-off between metrics?
-- Is another function better?
+- Did the candidate clear the benchmark gate?
+- Is the result a regression, tie, or trade-off?
+- Is the difference large enough to matter?
+- Is another implementation better?
 
-Useful for local development, CI checks, scripts, and automated optimization loops.
+Useful for terminal workflows, CI checks, scripts, and automated optimization loops.
 
 ## Contents
 
@@ -57,14 +56,15 @@ Useful for local development, CI checks, scripts, and automated optimization loo
 - Handles lower-is-better metrics such as `sec/op`, `ns/op`, `B/op`, and `allocs/op`.
 - Handles higher-is-better metrics such as `MB/s`, `ops/s`, and other `/s` rates.
 - Flags mixed results as `trade-off` when one metric improves while another regresses.
-- Returns stable outcomes for CI and scripts.
+- Returns stable outcomes for CI, scripts, and AI agents.
+- Can require specific outcomes for exit-code gates.
 - Explains each workflow step on demand with `verdict help <topic>`.
 
 ## Usage
 
 ```shellsession
 % verdict --help
-Turn Go benchmark results into a winner, tie, or trade-off.
+Objective benchmark decisions for Go optimization loops.
 
 Usage:
   verdict [command] [options]
@@ -95,6 +95,8 @@ Options:
       gotestbench: compare raw go test -bench sub-benchmarks, such as original vs enhanced.
   --verbose
       Include verdict reason and metric details in text output.
+  --require outcomes
+      Require comma-separated outcomes for exit 0, such as new-wins or new-wins,tie.
   -a file
       Raw benchmark file for side A.
   -b file
@@ -106,7 +108,7 @@ Options:
   --alpha value
       P-value threshold for statistical significance. Must be greater than 0 and at most 1. Default: 0.05.
   --min-delta value
-      Minimum absolute delta percentage to treat as a practical difference. Must be non-negative. Default: 0.0.
+      Minimum absolute delta percentage to treat as a practical difference. Must be non-negative. Default: 2.0.
 
 Hotspot options:
   --bench regexp
@@ -149,7 +151,7 @@ make build
 
 ## AI Agent Skill
 
-`verdict skill` prints guidance for agents that use `verdict` as an objective benchmark gate in Go optimization loops. This is optional; the core command is the same developer-facing benchmark decision tool.
+`verdict skill` prints guidance for agents that use `verdict` as an objective benchmark gate in Go optimization loops. The same command also serves CI and script automation.
 
 The skill is intentionally compact. It keeps decision rules in context and routes detailed mechanics to `verdict help <topic>`, so agents with small context windows fetch guidance only when needed.
 

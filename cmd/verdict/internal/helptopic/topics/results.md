@@ -14,9 +14,11 @@
 
 `verdict` aggregates per-metric directions with a Pareto rule: a side wins only when it is better in at least one metric and worse in none. "Pareto-superior" means exactly that: no metric got worse.
 
-A metric counts only when it is statistically significant (`p <= alpha`, default `0.05`) and practically different (`abs(delta_pct) >= min-delta`, default `0`). Lower is better for `sec/op`, `ns/op`, `B/op`, and `allocs/op`. Higher is better for `MB/s`, `GB/s`, and `ops/s`.
+A metric counts only when it is statistically significant (`p <= alpha`, default `0.05`) and practically different (`abs(delta_pct) >= min-delta`, default `2.0`). Lower is better for `sec/op`, `ns/op`, `B/op`, and `allocs/op`. Higher is better for `MB/s`, `GB/s`, and `ops/s`.
 
 Mixed output across benchmarks is a measured result: report reject or revise instead of averaging wins or ignoring a losing line.
+
+Many benchmarks and metrics increase false-positive risk. If a result is mixed, surprising, or close, rerun targeted benchmarks with more samples or a stricter `--min-delta`.
 
 ## CLI Errors That Mean "No Decision"
 
@@ -29,4 +31,5 @@ Some inconclusive states are reported as CLI errors. Treat them as no measured v
 
 - `--verbose` adds the reason and per-metric details to text output.
 - `--format json` emits machine-readable verdicts with `outcome`, `reason_code`, and per-metric rows for scripted loops.
+- `--require new-wins` writes the report and exits non-zero unless every verdict is `new-wins`.
 - `--alpha` and `--min-delta` tune the significance and practical-difference thresholds.

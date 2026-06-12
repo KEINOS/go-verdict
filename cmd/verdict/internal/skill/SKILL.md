@@ -4,12 +4,12 @@ description: Use for Go performance requests, including "optimize this Go code",
 license: MIT
 metadata:
   author: KEINOS and The go-verdict Contributors
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # Verdict
 
-`verdict` turns Go benchmark results into one objective decision: `new-wins`, `old-wins`, `tie`, `trade-off`, or `inconclusive`. Use it as the keep/reject gate in every Go optimization loop, even when benchmarks are missing; bootstrap representative evidence first, then compare and decide.
+`verdict` is an objective benchmark gate for Go optimization loops. It turns benchmark evidence into repeatable keep/reject outcomes for automation, including CI, scripts, and AI agents.
 
 If the commands are missing, install them first: `go install github.com/KEINOS/go-verdict/cmd/verdict@latest` and `go install golang.org/x/perf/cmd/benchstat@latest`.
 
@@ -35,6 +35,7 @@ Detailed guidance lives in the CLI, not in this skill. Fetch one topic only when
 | Evidence shape | Command |
 | --- | --- |
 | One implementation edited over time | `benchstat old.txt new.txt \| verdict` |
+| CI or script must fail unless the candidate wins | `benchstat old.txt new.txt \| verdict --require new-wins` |
 | Two implementations in one run, as `/original` and `/enhanced` sub-benchmarks | `go test -run='^$' -bench=BenchmarkX -benchmem -count=10 ./pkg \| verdict` |
 | Two existing raw files with different benchmark names | `verdict -a old.txt -b new.txt` |
 | No target chosen yet | `verdict hotspot ./pkg` (finds targets; never proves a win) |
@@ -50,6 +51,7 @@ Use `-count=3` to `-count=5` for cheap exploration. Use `-count=10` or more for 
 - Benchmark labels must mean real implementations: the baseline label must run the actual pre-change code. If both labels call the same edited function, fix the benchmark shape and recapture (`verdict help gotestbench`).
 - If benchmark names, sub-benchmarks, inputs, or labels changed between captures, recapture both sides (`verdict help benchstat`).
 - Insufficient-sample and benchmark-set-mismatch errors mean no decision; fix the setup or collect more samples, then rerun (`verdict help results`).
+- `--require new-wins` is an executable gate: it still prints the report, then exits non-zero unless every verdict is `new-wins`.
 - Reject candidates that win by exploiting benchmark shape, flags, labels, fixture names, or unrepresentative benchmarks (overfitting).
 - Before reporting, verify the working tree still contains the candidate that produced the measured result.
 

@@ -75,8 +75,9 @@ const (
 // thresholds used by Parse and CompareRawFiles.
 //
 // Alpha defaults to 0.05 when left zero; non-zero Alpha values must be finite
-// and greater than 0 and at most 1. MinDeltaPct defaults to 0 and must be
-// finite and non-negative.
+// and greater than 0 and at most 1. MinDeltaPct defaults to DefaultMinDeltaPct
+// when left zero; use NewOptions().WithMinDeltaPct(0) to count any statistically
+// significant delta as practical. MinDeltaPct must be finite and non-negative.
 //
 // Mode accepts "", "auto", "benchstat", or "gotestbench". Empty mode is the
 // same as "auto": Parse detects raw go test benchmark rows when possible and
@@ -94,6 +95,8 @@ type Options struct {
 	Mode        string
 	Alpha       float64
 	MinDeltaPct float64
+
+	minDeltaPctSet bool
 }
 
 // Comparison is one parsed metric comparison for one benchmark.
@@ -132,6 +135,8 @@ const (
 	RawComparisonMinSamples = 3
 	// RecommendedRawSamples is the recommended sample count for stable raw benchmark decisions.
 	RecommendedRawSamples = 10
+	// DefaultMinDeltaPct is the default practical-difference threshold.
+	DefaultMinDeltaPct = 2.0
 )
 
 const (
@@ -260,17 +265,32 @@ func benchstatComparisons(rows []benchparser.Comparison, opts Options) []Compari
 // labels; gotestbench mode fills original/enhanced defaults when unset.
 func NewOptions() Options {
 	return Options{
-		Alpha:       defaultAlpha,
-		MinDeltaPct: 0,
-		Mode:        ModeAuto,
-		Baseline:    "",
-		Candidate:   "",
+		Alpha:          defaultAlpha,
+		MinDeltaPct:    DefaultMinDeltaPct,
+		Mode:           ModeAuto,
+		Baseline:       "",
+		Candidate:      "",
+		minDeltaPctSet: true,
 	}
+}
+
+// WithMinDeltaPct returns a copy of opts with an explicit practical-difference
+// threshold. Use WithMinDeltaPct(0) when every statistically significant delta
+// should count as practical.
+func (opts Options) WithMinDeltaPct(minDeltaPct float64) Options {
+	opts.MinDeltaPct = minDeltaPct
+	opts.minDeltaPctSet = true
+
+	return opts
 }
 
 func normalizeOptions(opts Options) Options {
 	if opts.Alpha == 0 {
 		opts.Alpha = defaultAlpha
+	}
+
+	if opts.MinDeltaPct == 0 && !opts.minDeltaPctSet {
+		opts.MinDeltaPct = DefaultMinDeltaPct
 	}
 
 	if opts.Mode == "" {

@@ -38,6 +38,7 @@ func TestCompatibilityV1_0_0(t *testing.T) {
 	require.Equal(t, 2, verdict.StatisticalMinSamples)
 	require.Equal(t, 3, verdict.RawComparisonMinSamples)
 	require.Equal(t, 10, verdict.RecommendedRawSamples)
+	require.InDelta(t, 2.0, verdict.DefaultMinDeltaPct, 0.001)
 }
 
 func compileV100Functions() {

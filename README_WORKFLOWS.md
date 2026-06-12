@@ -1,6 +1,6 @@
 # Workflow Details
 
-`verdict` supports one hotspot Scout workflow and three comparison Judge workflows: Alternative, Named File, and Before/After.
+`verdict` supports one hotspot Scout workflow and three comparison Judge workflows: Alternative, Named File, and Before/After. These workflows turn Go benchmark evidence into objective keep/reject gates for optimization loops.
 
 Auto mode is the default input mode. It detects whether stdin contains `benchstat` output or raw `go test -bench` output, then selects the matching comparison workflow when the input is unambiguous.
 
