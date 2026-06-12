@@ -13,6 +13,8 @@ import (
 )
 
 const (
+	argExtra        = "extra"
+	topicBenchstat  = "benchstat"
 	flagFormat      = "--format"
 	flagAlpha       = "--alpha"
 	flagMinDelta    = "--min-delta"
@@ -167,7 +169,8 @@ func TestRunCLIHelpWritesSamplePolicy(t *testing.T) {
 
 	for _, want := range []string{
 		"Usage:\n  verdict [command] [options]",
-		"Commands:\n  hotspot <package>",
+		"Commands:\n  help [topic]",
+		"  hotspot <package>",
 		"  skill",
 		"  version",
 		"Options:\n  --format text|json",
@@ -210,6 +213,61 @@ func TestRunCLIHotspotHelp(t *testing.T) {
 		"hotspot help should include subcommand usage")
 }
 
+func TestRunCLIHelpCommandListsTopics(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := runCLI([]string{cmdHelp}, strings.NewReader("ignored"), &out)
+	require.NoError(t, err,
+		"plain help command should succeed")
+
+	for _, want := range []string{
+		"Workflow help topics:",
+		"bootstrap",
+		"hotspot",
+		topicBenchstat,
+		"gotestbench",
+		"results",
+		"verdict help <topic>",
+	} {
+		require.Contains(t, out.String(), want,
+			"help index should list workflow topics")
+	}
+}
+
+func TestRunCLIHelpCommandPrintsTopic(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := runCLI([]string{cmdHelp, topicBenchstat}, strings.NewReader("ignored"), &out)
+	require.NoError(t, err,
+		"help topic command should succeed")
+	require.Contains(t, out.String(), "benchstat old.txt new.txt | verdict",
+		"benchstat topic should include the before/after pipeline")
+}
+
+func TestRunCLIHelpCommandUnknownTopic(t *testing.T) {
+	t.Parallel()
+
+	err := runCLI([]string{cmdHelp, "no-such-topic"}, strings.NewReader("ignored"), &strings.Builder{})
+	require.Error(t, err,
+		"unknown topic should return an error")
+	require.ErrorContains(t, err, "unknown help topic",
+		"unknown topic error should name the failure")
+	require.ErrorContains(t, err, "bootstrap",
+		"unknown topic error should list available topics")
+}
+
+func TestRunCLIHelpCommandRejectsExtraArgs(t *testing.T) {
+	t.Parallel()
+
+	err := runCLI([]string{cmdHelp, topicBenchstat, argExtra}, strings.NewReader("ignored"), &strings.Builder{})
+	require.ErrorIs(t, err, errUnexpectedCommandArgs,
+		"extra args should return 'errUnexpectedCommandArgs' error")
+}
+
 func TestRunCLIVersionRequests(t *testing.T) {
 	t.Parallel()
 
@@ -238,7 +296,7 @@ func TestRunCLIVersionRequests(t *testing.T) {
 func TestRunCLIVersionRejectsExtraArgs(t *testing.T) {
 	t.Parallel()
 
-	err := runCLI([]string{cmdVersion, "extra"}, strings.NewReader("ignored"), &strings.Builder{})
+	err := runCLI([]string{cmdVersion, argExtra}, strings.NewReader("ignored"), &strings.Builder{})
 	require.ErrorIs(t, err, errUnexpectedCommandArgs,
 		"extra args should return 'errUnexpectedCommandArgs' error")
 }
@@ -290,7 +348,7 @@ func TestRunCLISkillNilOutputContainsContext(t *testing.T) {
 func TestRunCLISkillRejectsExtraArgs(t *testing.T) {
 	t.Parallel()
 
-	err := runCLI([]string{cmdSkill, "extra"}, strings.NewReader("ignored"), &strings.Builder{})
+	err := runCLI([]string{cmdSkill, argExtra}, strings.NewReader("ignored"), &strings.Builder{})
 	require.ErrorIs(t, err, errUnexpectedCommandArgs,
 		"extra args should return 'errUnexpectedCommandArgs' error")
 }

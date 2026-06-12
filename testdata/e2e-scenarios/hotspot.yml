@@ -21,6 +21,7 @@ cases:
       stdout:
         contains:
           - "./testdata/benchtargets: no benchmark workload ran"
+          - "verdict help bootstrap"
       stderr:
         equals: ""
 

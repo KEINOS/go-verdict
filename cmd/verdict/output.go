@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"io"
+	"strings"
 
+	"github.com/KEINOS/go-verdict/cmd/verdict/internal/helptopic"
 	"github.com/KEINOS/go-verdict/verdict"
 )
 
@@ -55,6 +57,8 @@ Note:
   For stable results, run benchmarks with -count=%d or more.
 
 Commands:
+  help [topic]
+      Print workflow help. Topics: %s.
   hotspot <package>
       Suggest the first function to inspect from benchmark CPU and allocation profiles.
   skill
@@ -100,5 +104,6 @@ Hotspot options:
 		AppDescription,
 		verdict.RawComparisonMinSamples,
 		verdict.RecommendedRawSamples,
+		strings.Join(helptopic.Topics(), ", "),
 	)
 }

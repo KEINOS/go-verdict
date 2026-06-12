@@ -2,6 +2,10 @@
 
 This guide explains `verdict` command output, thresholds, and result meanings. See [Workflow Details](README_WORKFLOWS.md) for complete comparison examples.
 
+## Help Topics
+
+`verdict help` lists the built-in workflow topics, and `verdict help <topic>` prints one of them. Topics: `bootstrap`, `hotspot`, `benchstat`, `gotestbench`, and `results`. The topics carry the same guidance as the README files, so terminals, scripts, and AI agents can read it without leaving the CLI.
+
 ## Output Formats
 
 Text output is the default:

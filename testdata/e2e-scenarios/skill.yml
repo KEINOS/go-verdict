@@ -13,5 +13,7 @@ cases:
           - "license: MIT"
           - "author: KEINOS and The go-verdict Contributors"
           - "version:"
+          - "verdict help bootstrap"
+          - "Final Report Format"
       stderr:
         equals: ""

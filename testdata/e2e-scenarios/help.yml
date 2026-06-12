@@ -10,6 +10,7 @@ cases:
         contains:
           - "Turn Go benchmark results into a winner, tie, or trade-off."
           - "Commands:"
+          - "help [topic]"
           - "Options:"
       stderr:
         equals: ""

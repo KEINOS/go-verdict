@@ -50,6 +50,7 @@ Useful for local development, CI checks, scripts, and automated optimization loo
 - Handles higher-is-better metrics such as `MB/s`, `ops/s`, and other `/s` rates.
 - Flags mixed results as `trade-off` when one metric improves while another regresses.
 - Returns stable outcomes for CI and scripts.
+- Explains each workflow step on demand with `verdict help <topic>`.
 
 ## Usage
 
@@ -65,6 +66,8 @@ Note:
   For stable results, run benchmarks with -count=10 or more.
 
 Commands:
+  help [topic]
+      Print workflow help. Topics: bootstrap, hotspot, benchstat, gotestbench, results.
   hotspot <package>
       Suggest the first function to inspect from benchmark CPU and allocation profiles.
   skill
@@ -139,6 +142,8 @@ make build
 ## AI Agent Skill
 
 `verdict skill` prints guidance for agents that use `verdict` as an objective benchmark gate in Go optimization loops. This is optional; the core command is the same developer-facing benchmark decision tool.
+
+The skill is intentionally compact. It keeps decision rules in context and routes detailed mechanics to `verdict help <topic>`, so agents with small context windows fetch guidance only when needed.
 
 Export the canonical guidance with:
 
