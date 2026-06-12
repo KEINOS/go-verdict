@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	// AppDescription holds the application description (approved Phase 27 wording).
-	AppDescription = "Turn Go benchmark results into a winner, tie, or trade-off."
+	// AppDescription holds the application description.
+	AppDescription = "Objective benchmark decisions for Go optimization loops."
 )
 
 // Mockable variable for testing.
@@ -50,7 +50,12 @@ func runCLI(args []string, input io.Reader, output io.Writer) error {
 		return err
 	}
 
-	return writeReport(report, cliOpts, output)
+	err = writeReport(report, cliOpts, output)
+	if err != nil {
+		return err
+	}
+
+	return requireReportOutcomes(report, cliOpts.requiredOutcomes)
 }
 
 func exitOnError(err error) {

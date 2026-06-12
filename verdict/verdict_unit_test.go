@@ -20,6 +20,8 @@ const (
 	benchmarkFoo          = "Foo-8"
 	benchstatNewWinsInput = "name          old time/op  new time/op  delta\n" +
 		"Foo-8         10.0ns ± 1%   8.0ns ± 1%  -20.00% (p=0.001 n=10+10)\n"
+	benchstatSmallWinInput = "name          old time/op  new time/op  delta\n" +
+		"Foo-8         10.0ns ± 1%   9.9ns ± 1%  -1.00% (p=0.001 n=10+10)\n"
 	labelCandidate           = "candidate"
 	labelNew                 = "new"
 	labelNewTxt              = "new.txt"
@@ -204,6 +206,26 @@ func TestParseZeroValueOptionsUseDefaults(t *testing.T) {
 
 	require.Equal(t, NewWins, report.Verdicts[0].Outcome,
 		"unexpected outcome with zero-value options that should use defaults")
+}
+
+func TestDefaultMinDeltaTreatsSmallChangeAsTie(t *testing.T) {
+	t.Parallel()
+
+	for _, opts := range []Options{Options{}, NewOptions()} {
+		report, err := Parse(strings.NewReader(benchstatSmallWinInput), opts)
+		require.NoError(t, err)
+		require.Equal(t, Tie, report.Verdicts[0].Outcome,
+			"default min-delta should treat small significant changes as tie")
+	}
+}
+
+func TestWithMinDeltaPctAllowsExplicitZero(t *testing.T) {
+	t.Parallel()
+
+	report, err := Parse(strings.NewReader(benchstatSmallWinInput), NewOptions().WithMinDeltaPct(0))
+	require.NoError(t, err)
+	require.Equal(t, NewWins, report.Verdicts[0].Outcome,
+		"explicit zero min-delta should count any significant practical direction")
 }
 
 func TestHigherRateMetricTreatsPositiveDeltaAsImproved(t *testing.T) {
@@ -462,11 +484,7 @@ Foo-8         10.0ns ± 1%   8.0ns ± 1%  changed (p=0.001 n=10+10)
 func TestMinDeltaThresholdMakesSignificantSmallChangeTie(t *testing.T) {
 	t.Parallel()
 
-	input := `name          old time/op  new time/op  delta
-Foo-8         10.0ns ± 1%   9.9ns ± 1%  -1.00% (p=0.001 n=10+10)
-`
-
-	report, err := Parse(strings.NewReader(input), Options{Alpha: 0.05, MinDeltaPct: 2})
+	report, err := Parse(strings.NewReader(benchstatSmallWinInput), Options{Alpha: 0.05, MinDeltaPct: 2})
 	require.NoError(t, err)
 	require.Equal(t, Tie, report.Verdicts[0].Outcome,
 		"expected tie when change is below min delta threshold even if p-value is significant")

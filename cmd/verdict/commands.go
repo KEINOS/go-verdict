@@ -3,14 +3,18 @@ package main
 import (
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/KEINOS/go-verdict/cmd/verdict/internal/appver"
+	"github.com/KEINOS/go-verdict/cmd/verdict/internal/helptopic"
 	"github.com/KEINOS/go-verdict/cmd/verdict/internal/hotspot"
 	"github.com/KEINOS/go-verdict/cmd/verdict/internal/skill"
 )
 
 const (
+	cmdHelp    = "help"
 	cmdHotspot = "hotspot"
 	cmdSkill   = "skill"
 	cmdVersion = "version"
@@ -18,6 +22,19 @@ const (
 
 type subcmd interface {
 	Run() (string, error)
+}
+
+// commandHandler runs one top-level command with its remaining args.
+type commandHandler func(args []string, output io.Writer) error
+
+// commandHandlers maps each top-level command name to its handler.
+func commandHandlers() map[string]commandHandler {
+	return map[string]commandHandler{
+		cmdHelp:    runHelpCommand,
+		cmdHotspot: runHotspotCommand,
+		cmdSkill:   textSubcmdHandler(skill.New(), false),
+		cmdVersion: textSubcmdHandler(appver.New(), true),
+	}
 }
 
 func runTopLevelCommand(args []string, output io.Writer) (bool, error) {
@@ -31,32 +48,51 @@ func runTopLevelCommand(args []string, output io.Writer) (bool, error) {
 		return commandUnhandled, nil
 	}
 
-	if command != cmdHotspot && command != cmdSkill && command != cmdVersion {
-		return commandHandled, fmt.Errorf("%w: %s", errUnknownCommand, command)
+	handler, ok := commandHandlers()[command]
+	if !ok {
+		return commandHandled, fmt.Errorf(
+			"%w: %s (expected one of: %s)",
+			errUnknownCommand, command, strings.Join(commandNames(), ", "),
+		)
 	}
 
-	if command == cmdHotspot {
-		err := hotspot.New().Run(args[1:], output)
+	return commandHandled, handler(args[1:], output)
+}
+
+func runHelpCommand(args []string, output io.Writer) error {
+	switch len(args) {
+	case 0:
+		return writeString(output, helptopic.IndexText())
+	case 1:
+		text, err := helptopic.Text(args[0])
 		if err != nil {
-			return commandHandled, fmt.Errorf("running hotspot command: %w", err)
+			return fmt.Errorf("running help command: %w", err)
 		}
 
-		return commandHandled, nil
+		return writeString(output, text)
+	default:
+		return errUnexpectedCommandArgs
+	}
+}
+
+func runHotspotCommand(args []string, output io.Writer) error {
+	err := hotspot.New().Run(args, output)
+	if err != nil {
+		return fmt.Errorf("running hotspot command: %w", err)
 	}
 
-	if len(args) != 1 {
-		return commandHandled, errUnexpectedCommandArgs
+	return nil
+}
+
+// textSubcmdHandler adapts a no-argument text subcommand to a commandHandler.
+func textSubcmdHandler(command subcmd, addTrailingNewline bool) commandHandler {
+	return func(args []string, output io.Writer) error {
+		if len(args) != 0 {
+			return errUnexpectedCommandArgs
+		}
+
+		return runSubcmd(command, output, addTrailingNewline)
 	}
-
-	var subCommand subcmd
-
-	if command == cmdSkill {
-		subCommand = skill.New()
-	} else {
-		subCommand = appver.New()
-	}
-
-	return commandHandled, runSubcmd(subCommand, output, command == cmdVersion)
 }
 
 func runSubcmd(command subcmd, output io.Writer, addTrailingNewline bool) error {
@@ -78,6 +114,10 @@ func runSubcmd(command subcmd, output io.Writer, addTrailingNewline bool) error 
 
 func runVersionCommand(output io.Writer) error {
 	return runSubcmd(appver.New(), output, true)
+}
+
+func commandNames() []string {
+	return slices.Sorted(maps.Keys(commandHandlers()))
 }
 
 func topLevelCommand(args []string) (string, bool) {

@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"io"
+	"strings"
 
+	"github.com/KEINOS/go-verdict/cmd/verdict/internal/helptopic"
 	"github.com/KEINOS/go-verdict/verdict"
 )
 
@@ -44,8 +46,7 @@ func writeString(output io.Writer, text string) error {
 	return nil
 }
 
-func flagHelpText() string {
-	return fmt.Sprintf(`%s
+const flagHelpTemplate = `%s
 
 Usage:
   verdict [command] [options]
@@ -55,6 +56,8 @@ Note:
   For stable results, run benchmarks with -count=%d or more.
 
 Commands:
+  help [topic]
+      Print workflow help. Topics: %s.
   hotspot <package>
       Suggest the first function to inspect from benchmark CPU and allocation profiles.
   skill
@@ -74,6 +77,8 @@ Options:
       gotestbench: compare raw go test -bench sub-benchmarks, such as original vs enhanced.
   --verbose
       Include verdict reason and metric details in text output.
+  --require outcomes
+      Require comma-separated outcomes for exit 0, such as new-wins or new-wins,tie.
   -a file
       Raw benchmark file for side A.
   -b file
@@ -85,7 +90,7 @@ Options:
   --alpha value
       P-value threshold for statistical significance. Must be greater than 0 and at most 1. Default: 0.05.
   --min-delta value
-      Minimum absolute delta percentage to treat as a practical difference. Must be non-negative. Default: 0.0.
+      Minimum absolute delta percentage to treat as a practical difference. Must be non-negative. Default: %.1f.
 
 Hotspot options:
   --bench regexp
@@ -96,9 +101,15 @@ Hotspot options:
       Benchmark run count for verdict hotspot. Default: 1.
   --format text|json
       Output format for verdict hotspot. Default: text.
-`,
+`
+
+func flagHelpText() string {
+	return fmt.Sprintf(
+		flagHelpTemplate,
 		AppDescription,
 		verdict.RawComparisonMinSamples,
 		verdict.RecommendedRawSamples,
+		strings.Join(helptopic.Topics(), ", "),
+		verdict.DefaultMinDeltaPct,
 	)
 }

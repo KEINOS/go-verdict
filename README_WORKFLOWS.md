@@ -1,8 +1,10 @@
 # Workflow Details
 
-`verdict` supports one hotspot Scout workflow and three comparison Judge workflows: Alternative, Named File, and Before/After.
+`verdict` supports one hotspot Scout workflow and three comparison Judge workflows: Alternative, Named File, and Before/After. These workflows turn Go benchmark evidence into objective keep/reject gates for optimization loops.
 
 Auto mode is the default input mode. It detects whether stdin contains `benchstat` output or raw `go test -bench` output, then selects the matching comparison workflow when the input is unambiguous.
+
+The same guidance is available from the CLI without opening this file: `verdict help` lists the workflow topics, and `verdict help <topic>` prints one of them, such as `verdict help benchstat`.
 
 ## Hotspot Scout
 
@@ -14,7 +16,7 @@ verdict hotspot ./your/package
 
 The Scout command runs existing benchmarks for one package, collects CPU and allocation profiles in a temporary directory, and suggests the first user-code function to inspect. It does not decide whether a code change is faster. After changing code, use one of the Judge workflows below to compare before and after benchmark results.
 
-If no benchmark workload runs, `verdict hotspot` explains that state and exits without changing user code. Add a `BenchmarkXxx` function or pass `--bench` so the workload covers the code you want to inspect.
+If no benchmark workload runs, `verdict hotspot` explains that state and exits without changing user code. Add a `BenchmarkXxx` function or pass `--bench` so the workload covers the code you want to inspect. `verdict help bootstrap` explains how to create a representative benchmark when none exists.
 
 ## Alternative Comparison
 
@@ -141,7 +143,7 @@ If one side wins, `verdict` uses the file labels from the `benchstat` header:
 ExampleFast-10: new.txt wins
 ```
 
-> [!INFO]
+> [!NOTE]
 > `verdict` parses the [Go benchmark format](https://go.googlesource.com/proposal/+/master/design/14313-benchmark-format.md) and `benchstat` output. Therefore, you can use it with any tool that produces compatible output.
 > For example, you can also compare the speed of the Go compiler using [compilebench](https://pkg.go.dev/golang.org/x/tools/cmd/compilebench) and [toolstash](https://pkg.go.dev/golang.org/x/tools/cmd/toolstash).
 >

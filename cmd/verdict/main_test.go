@@ -13,10 +13,13 @@ import (
 )
 
 const (
+	argExtra        = "extra"
+	topicBenchstat  = "benchstat"
 	flagFormat      = "--format"
 	flagAlpha       = "--alpha"
 	flagMinDelta    = "--min-delta"
 	flagMode        = "--mode"
+	flagRequire     = "--require"
 	formatText      = "text"
 	formatJSON      = "json"
 	removedMode     = "alternatives"
@@ -143,6 +146,65 @@ func TestRunCLIJSONFormat(t *testing.T) {
 		"json output should include new-wins outcome")
 }
 
+func TestRunCLIRequireAllowsMatchingOutcomes(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := runCLI([]string{flagRequire, string(verdict.NewWins)}, strings.NewReader(winningInput), &out)
+	require.NoError(t, err,
+		"matching required outcome should succeed")
+	require.Contains(t, out.String(), "Foo-8: new wins",
+		"report should still be written before require gate succeeds")
+}
+
+func TestRunCLIRequireRejectsNonMatchingOutcomesAfterReport(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := runCLI([]string{flagRequire, string(verdict.OldWins)}, strings.NewReader(winningInput), &out)
+	require.ErrorIs(t, err, errRequiredOutcome,
+		"non-matching required outcome should fail")
+	require.ErrorContains(t, err, "Foo-8: new-wins",
+		"error should name the benchmark and outcome that missed the gate")
+	require.Contains(t, out.String(), "Foo-8: new wins",
+		"report should be written before require gate fails")
+}
+
+func TestRunCLIRequireRejectsUnknownOutcome(t *testing.T) {
+	t.Parallel()
+
+	err := runCLI([]string{flagRequire, "faster"}, strings.NewReader(winningInput), &strings.Builder{})
+	require.ErrorIs(t, err, errUnknownRequired,
+		"unknown required outcome should fail during flag initialization")
+	require.ErrorContains(t, err, "new-wins",
+		"error should list valid outcomes")
+}
+
+func TestRunCLIMinDeltaDefaultAndExplicitZero(t *testing.T) {
+	t.Parallel()
+
+	input := "name          old time/op  new time/op  delta\n" +
+		"Foo-8         10.0ns ± 1%   9.9ns ± 1%  -1.00% (p=0.001 n=10+10)\n"
+
+	var defaultOut strings.Builder
+
+	err := runCLI(nil, strings.NewReader(input), &defaultOut)
+	require.NoError(t, err,
+		"default min-delta should parse successfully")
+	require.Equal(t, "Foo-8: tie\n", defaultOut.String(),
+		"default min-delta should treat a 1% change as tie")
+
+	var zeroOut strings.Builder
+
+	err = runCLI([]string{flagMinDelta, "0"}, strings.NewReader(input), &zeroOut)
+	require.NoError(t, err,
+		"explicit zero min-delta should parse successfully")
+	require.Equal(t, "Foo-8: new wins\n", zeroOut.String(),
+		"explicit zero min-delta should count the 1% significant change")
+}
+
 func TestRunCLIHelpWritesSamplePolicy(t *testing.T) {
 	t.Parallel()
 
@@ -167,7 +229,8 @@ func TestRunCLIHelpWritesSamplePolicy(t *testing.T) {
 
 	for _, want := range []string{
 		"Usage:\n  verdict [command] [options]",
-		"Commands:\n  hotspot <package>",
+		"Commands:\n  help [topic]",
+		"  hotspot <package>",
 		"  skill",
 		"  version",
 		"Options:\n  --format text|json",
@@ -210,6 +273,61 @@ func TestRunCLIHotspotHelp(t *testing.T) {
 		"hotspot help should include subcommand usage")
 }
 
+func TestRunCLIHelpCommandListsTopics(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := runCLI([]string{cmdHelp}, strings.NewReader("ignored"), &out)
+	require.NoError(t, err,
+		"plain help command should succeed")
+
+	for _, want := range []string{
+		"Workflow help topics:",
+		"bootstrap",
+		"hotspot",
+		topicBenchstat,
+		"gotestbench",
+		"results",
+		"verdict help <topic>",
+	} {
+		require.Contains(t, out.String(), want,
+			"help index should list workflow topics")
+	}
+}
+
+func TestRunCLIHelpCommandPrintsTopic(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := runCLI([]string{cmdHelp, topicBenchstat}, strings.NewReader("ignored"), &out)
+	require.NoError(t, err,
+		"help topic command should succeed")
+	require.Contains(t, out.String(), "benchstat old.txt new.txt | verdict",
+		"benchstat topic should include the before/after pipeline")
+}
+
+func TestRunCLIHelpCommandUnknownTopic(t *testing.T) {
+	t.Parallel()
+
+	err := runCLI([]string{cmdHelp, "no-such-topic"}, strings.NewReader("ignored"), &strings.Builder{})
+	require.Error(t, err,
+		"unknown topic should return an error")
+	require.ErrorContains(t, err, "unknown help topic",
+		"unknown topic error should name the failure")
+	require.ErrorContains(t, err, "bootstrap",
+		"unknown topic error should list available topics")
+}
+
+func TestRunCLIHelpCommandRejectsExtraArgs(t *testing.T) {
+	t.Parallel()
+
+	err := runCLI([]string{cmdHelp, topicBenchstat, argExtra}, strings.NewReader("ignored"), &strings.Builder{})
+	require.ErrorIs(t, err, errUnexpectedCommandArgs,
+		"extra args should return 'errUnexpectedCommandArgs' error")
+}
+
 func TestRunCLIVersionRequests(t *testing.T) {
 	t.Parallel()
 
@@ -238,7 +356,7 @@ func TestRunCLIVersionRequests(t *testing.T) {
 func TestRunCLIVersionRejectsExtraArgs(t *testing.T) {
 	t.Parallel()
 
-	err := runCLI([]string{cmdVersion, "extra"}, strings.NewReader("ignored"), &strings.Builder{})
+	err := runCLI([]string{cmdVersion, argExtra}, strings.NewReader("ignored"), &strings.Builder{})
 	require.ErrorIs(t, err, errUnexpectedCommandArgs,
 		"extra args should return 'errUnexpectedCommandArgs' error")
 }
@@ -290,7 +408,7 @@ func TestRunCLISkillNilOutputContainsContext(t *testing.T) {
 func TestRunCLISkillRejectsExtraArgs(t *testing.T) {
 	t.Parallel()
 
-	err := runCLI([]string{cmdSkill, "extra"}, strings.NewReader("ignored"), &strings.Builder{})
+	err := runCLI([]string{cmdSkill, argExtra}, strings.NewReader("ignored"), &strings.Builder{})
 	require.ErrorIs(t, err, errUnexpectedCommandArgs,
 		"extra args should return 'errUnexpectedCommandArgs' error")
 }
@@ -457,6 +575,68 @@ func TestRunCLIGoTestBenchScannerErrorIsParseError(t *testing.T) {
 		require.ErrorContains(t, err, want,
 			"scanner error should include expected context")
 	}
+}
+
+func TestRunCLIEmptyStdinReturnsGuidance(t *testing.T) {
+	t.Parallel()
+
+	for _, input := range []string{"", " \n\t\n"} {
+		err := runCLI(nil, strings.NewReader(input), &strings.Builder{})
+		require.ErrorIs(t, err, errNoStdinInput,
+			"blank stdin should return the no-input error")
+
+		for _, want := range []string{
+			"benchstat old.txt new.txt | verdict",
+			"verdict help",
+		} {
+			require.ErrorContains(t, err, want,
+				"no-input error should include actionable guidance")
+		}
+	}
+}
+
+func TestRunCLITerminalStdinReturnsGuidance(t *testing.T) {
+	t.Parallel()
+
+	// /dev/null is a character device, like an interactive terminal, so the
+	// CLI must fail fast instead of blocking on a read that never ends.
+	devNull, err := os.Open(os.DevNull)
+	require.NoError(t, err,
+		"failed to open the null device")
+
+	t.Cleanup(func() { _ = devNull.Close() })
+
+	err = runCLI(nil, devNull, &strings.Builder{})
+	require.ErrorIs(t, err, errNoStdinInput,
+		"character-device stdin should return the no-input error")
+}
+
+func TestIsInteractiveTerminal(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, isInteractiveTerminal(strings.NewReader("data")),
+		"plain readers should not count as interactive terminals")
+
+	regular, err := os.CreateTemp(t.TempDir(), "stdin-*.txt")
+	require.NoError(t, err,
+		"failed to create temp file")
+
+	t.Cleanup(func() { _ = regular.Close() })
+
+	require.False(t, isInteractiveTerminal(regular),
+		"regular files should not count as interactive terminals")
+
+	devNull, err := os.Open(os.DevNull)
+	require.NoError(t, err,
+		"failed to open the null device")
+
+	t.Cleanup(func() { _ = devNull.Close() })
+
+	require.True(t, isInteractiveTerminal(devNull),
+		"character devices should count as interactive terminals")
+
+	require.False(t, isInteractiveTerminal(failingStatter{}),
+		"stat failures should fall back to non-interactive")
 }
 
 func TestRunCLIReadErrorContainsContext(t *testing.T) {
@@ -675,6 +855,16 @@ type failingReader struct{}
 
 func (failingReader) Read(_ []byte) (int, error) {
 	return 0, errTestWrite
+}
+
+type failingStatter struct{}
+
+func (failingStatter) Read(_ []byte) (int, error) {
+	return 0, errTestWrite
+}
+
+func (failingStatter) Stat() (os.FileInfo, error) {
+	return nil, errTestWrite
 }
 
 type failingSubcmd struct{}

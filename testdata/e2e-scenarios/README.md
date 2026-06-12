@@ -48,7 +48,7 @@ cases:
       exit_code: 0
       stdout:
         contains:
-          - "Turn Go benchmark results into a winner, tie, or trade-off."
+          - "Objective benchmark decisions for Go optimization loops."
       stderr:
         equals: ""
 ```

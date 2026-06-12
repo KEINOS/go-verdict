@@ -1,0 +1,92 @@
+name: help-topics
+timeout: 10s
+
+cases:
+  - name: list workflow topics
+    args: ["help"]
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "Workflow help topics:"
+          - "bootstrap"
+          - "hotspot"
+          - "benchstat"
+          - "gotestbench"
+          - "results"
+          - "verdict help <topic>"
+      stderr:
+        equals: ""
+
+  - name: show bootstrap topic
+    args: ["help", "bootstrap"]
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "# Bootstrap A Benchmark"
+          - "verdict help hotspot"
+      stderr:
+        equals: ""
+
+  - name: show benchstat topic
+    args: ["help", "benchstat"]
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "benchstat old.txt new.txt | verdict"
+          - "verdict help results"
+      stderr:
+        equals: ""
+
+  - name: show gotestbench topic
+    args: ["help", "gotestbench"]
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "--mode gotestbench"
+          - "verdict -a fileA.txt -b fileB.txt"
+      stderr:
+        equals: ""
+
+  - name: show hotspot topic
+    args: ["help", "hotspot"]
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "verdict hotspot ./your/package"
+          - "no-benchmark"
+      stderr:
+        equals: ""
+
+  - name: show results topic
+    args: ["help", "results"]
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "Pareto"
+          - "new-wins"
+          - "trade-off"
+      stderr:
+        equals: ""
+
+  - name: reject unknown topic
+    args: ["help", "no-such-topic"]
+    want:
+      exit_code: 1
+      stderr:
+        contains:
+          - "unknown help topic"
+          - "bootstrap, hotspot, benchstat, gotestbench, results"
+
+  - name: reject extra topic args
+    args: ["help", "benchstat", "extra"]
+    want:
+      exit_code: 1
+      stderr:
+        contains:
+          - "command does not accept extra arguments"

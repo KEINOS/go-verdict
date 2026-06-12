@@ -18,10 +18,11 @@ const (
 )
 
 type cliOptions struct {
-	aPath        string
-	bPath        string
-	outputFormat string
-	verbose      bool
+	aPath            string
+	bPath            string
+	outputFormat     string
+	requiredOutcomes outcomeSet
+	verbose          bool
 }
 
 func initialize(args []string) (*verdict.Options, cliOptions, error) {
@@ -32,45 +33,23 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 	cliOpts.outputFormat = formatDefault
 	flagSet := flag.NewFlagSet("verdict", flag.ContinueOnError)
 	flagSet.SetOutput(io.Discard)
-
-	flagSet.StringVar(&cliOpts.outputFormat,
-		"format", formatDefault,
-		"output format: text or json")
-	flagSet.StringVar(&cliOpts.aPath,
-		"a", "",
-		"raw benchmark file for side A")
-	flagSet.StringVar(&cliOpts.bPath,
-		"b", "",
-		"raw benchmark file for side B")
-	flagSet.StringVar(&opts.Mode,
-		"mode", opts.Mode,
-		"input mode: auto, benchstat, or gotestbench")
-	flagSet.StringVar(&opts.Baseline,
-		"baseline", "",
-		"baseline sub-benchmark name for gotestbench mode")
-	flagSet.StringVar(&opts.Candidate,
-		"candidate", "",
-		"candidate sub-benchmark name for gotestbench mode")
-	flagSet.Float64Var(&opts.Alpha,
-		"alpha", opts.Alpha,
-		"p-value threshold")
-	flagSet.Float64Var(&opts.MinDeltaPct,
-		"min-delta", opts.MinDeltaPct,
-		"minimum absolute delta percentage treated as practical difference")
-	flagSet.BoolVar(&cliOpts.verbose,
-		"verbose", false,
-		"include verdict reason and metric details in text output")
+	requiredRaw := bindFlags(flagSet, &opts, &cliOpts)
 	flagSet.Usage = func() {
 		_, _ = fmt.Fprint(flagSet.Output(), flagHelpText())
 	}
 
 	err := flagSet.Parse(args)
 	if err != nil {
-		return nil, cliOptions{}, fmt.Errorf("%w: %w", errParsingFlags, err)
+		return nil, cliOptions{}, fmt.Errorf("%w: %w (run 'verdict --help' for usage)", errParsingFlags, err)
 	}
 
 	if opts.Mode != verdict.ModeAuto && opts.Mode != verdict.ModeBenchstat && opts.Mode != verdict.ModeGoTestBench {
 		return nil, cliOptions{}, errUnknownMode
+	}
+
+	cliOpts.requiredOutcomes, err = parseRequiredOutcomes(*requiredRaw)
+	if err != nil {
+		return nil, cliOptions{}, err
 	}
 
 	err = validateCLIOptions(opts)
@@ -79,6 +58,25 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 	}
 
 	return &opts, cliOpts, nil
+}
+
+func bindFlags(flagSet *flag.FlagSet, opts *verdict.Options, cliOpts *cliOptions) *string {
+	flagSet.StringVar(&cliOpts.outputFormat, "format", formatDefault, "output format: text or json")
+	flagSet.StringVar(&cliOpts.aPath, "a", "", "raw benchmark file for side A")
+	flagSet.StringVar(&cliOpts.bPath, "b", "", "raw benchmark file for side B")
+	flagSet.StringVar(&opts.Mode, "mode", opts.Mode, "input mode: auto, benchstat, or gotestbench")
+	flagSet.StringVar(&opts.Baseline, "baseline", "", "baseline sub-benchmark name for gotestbench mode")
+	flagSet.StringVar(&opts.Candidate, "candidate", "", "candidate sub-benchmark name for gotestbench mode")
+	flagSet.Float64Var(&opts.Alpha, "alpha", opts.Alpha, "p-value threshold")
+	flagSet.Float64Var(
+		&opts.MinDeltaPct,
+		"min-delta",
+		opts.MinDeltaPct,
+		"minimum absolute delta percentage treated as practical difference",
+	)
+	flagSet.BoolVar(&cliOpts.verbose, "verbose", false, "include verdict reason and metric details in text output")
+
+	return flagSet.String("require", "", "comma-separated outcomes required for a successful exit")
 }
 
 func validateCLIOptions(opts verdict.Options) error {
