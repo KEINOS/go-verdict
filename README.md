@@ -22,7 +22,7 @@ Use `verdict` when CI, scripts, or AI agents need a repeatable keep-or-reject ga
 
     ```shellsession
     % verdict hotspot ./your/package
-    ./your/package: inspect mypkg.CountASCIIWords (cpu-hotspot; cpu flat 85.7%, cpu cum 90.5%)
+    ./your/package: inspect example.com/yourmod/yourpkg.CountASCIIWords (cpu-hotspot; cpu flat 85.7%, cpu cum 90.5%)
     Next: Optimize a candidate, then judge before/after benchmark results with verdict.
     ```
 
