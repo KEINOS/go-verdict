@@ -276,7 +276,7 @@ func NewOptions() Options {
 
 // WithMinDeltaPct returns a copy of opts with an explicit practical-difference
 // threshold. Use WithMinDeltaPct(0) when every statistically significant delta
-// should count as practical.
+// should count as practical, matching CLI use such as `verdict --min-delta 0`.
 func (opts Options) WithMinDeltaPct(minDeltaPct float64) Options {
 	opts.MinDeltaPct = minDeltaPct
 	opts.minDeltaPctSet = true

@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCompatibilityV1_0_0(t *testing.T) {
+func TestPublicAPIStability(t *testing.T) {
 	t.Parallel()
 
 	compileV100Functions()
