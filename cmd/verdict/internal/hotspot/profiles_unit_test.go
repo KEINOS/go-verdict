@@ -120,7 +120,7 @@ func TestCommandRunFastCombinesProfilingIntoOnePass(t *testing.T) {
 
 	var out strings.Builder
 
-	err := (Command{runner: runner}).Run([]string{"--fast", testPkgArg}, &out)
+	err := (Command{runner: runner}).Run([]string{testFlagFast, testPkgArg}, &out)
 	require.NoError(t, err)
 	require.Len(t, runner.calls, fastRunCallCount)
 
@@ -128,6 +128,21 @@ func TestCommandRunFastCombinesProfilingIntoOnePass(t *testing.T) {
 	require.Contains(t, onePass, "-test.cpuprofile=")
 	require.Contains(t, onePass, "-test.memprofile=")
 	require.Contains(t, out.String(), "--fast", "the caveat must name the flag that lowered CPU accuracy")
+}
+
+func TestCommandRunFastOmitsTheCaveatWithoutMeasurement(t *testing.T) {
+	t.Parallel()
+
+	runner := newFakeRunner()
+	runner.outputs = noBenchmarkOutputs()
+
+	var out strings.Builder
+
+	err := (Command{runner: runner}).Run([]string{testFlagFast, testPkgArg}, &out)
+	require.NoError(t, err)
+	require.Contains(t, out.String(), "static estimate")
+	require.NotContains(t, out.String(), "--fast",
+		"nothing was measured, so there is no CPU accuracy to caveat")
 }
 
 func TestHelpTextDocumentsFast(t *testing.T) {

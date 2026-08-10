@@ -181,6 +181,56 @@ func TestStaticKeyJoinsGenericAndClosureRows(t *testing.T) {
 	require.Equal(t, "sample.go", got.File)
 }
 
+func TestClassifyReportsAGenericFunctionOnce(t *testing.T) {
+	t.Parallel()
+
+	generic := testImportPath + ".Map"
+
+	got := classify(testResult(), profileSet{
+		CPU:          map[string]pprofRow{generic + "[go.shape.int]": row(generic+"[go.shape.int]", 40, 60)},
+		Alloc:        map[string]pprofRow{},
+		AllocObjects: map[string]pprofRow{},
+		Inuse:        map[string]pprofRow{},
+	}, map[string]complexity.Stat{
+		generic: statOf(generic, 24, 31),
+	}, defaultTop)
+
+	require.Equal(t, classHotAndComplex, got.Classification)
+
+	for _, choice := range got.Candidates {
+		require.NotEqual(t, generic, choice.Function,
+			"the instantiated and the declared symbol are the same function")
+	}
+}
+
+func TestClassifyOrdersDominatorsBeforeWhatTheyDominate(t *testing.T) {
+	t.Parallel()
+
+	// Charlie dominates both others. Bravo dominates Alfa, but the two tie on
+	// signal count and top score, so only dominance can order them, and Alfa
+	// would win a name comparison.
+	got := classify(testResult(), profileSet{
+		CPU: map[string]pprofRow{
+			testImportPath + ".Charlie": row(testImportPath+".Charlie", 40, 60),
+			testImportPath + ".Bravo":   row(testImportPath+".Bravo", 20, 20),
+			testImportPath + ".Alfa":    row(testImportPath+".Alfa", 20, 20),
+		},
+		Alloc: map[string]pprofRow{
+			testImportPath + ".Charlie": row(testImportPath+".Charlie", 50, 70),
+			testImportPath + ".Bravo":   row(testImportPath+".Bravo", 20, 20),
+			testImportPath + ".Alfa":    row(testImportPath+".Alfa", 15, 15),
+		},
+		AllocObjects: map[string]pprofRow{},
+		Inuse:        map[string]pprofRow{},
+	}, nil, 99)
+
+	require.Equal(t, testImportPath+".Charlie", got.Function)
+	require.Len(t, got.Candidates, 2)
+	require.Equal(t, testImportPath+".Bravo", got.Candidates[0].Function,
+		"a candidate must never rank behind one it dominates")
+	require.Equal(t, testImportPath+".Alfa", got.Candidates[1].Function)
+}
+
 func row(function string, flatPct float64, cumPct float64) pprofRow {
 	return pprofRow{Function: function, Flat: flatPct, FlatPct: flatPct, Cum: cumPct, CumPct: cumPct}
 }

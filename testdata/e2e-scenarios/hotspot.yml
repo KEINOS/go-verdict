@@ -85,3 +85,37 @@ cases:
           - "--fast"
       stderr:
         equals: ""
+
+  - name: name a generic function once
+    args:
+      - "hotspot"
+      - "--bench"
+      - "BenchmarkClassifyGeneric"
+      - "--benchtime"
+      - "100ms"
+      - "--format"
+      - "json"
+      - "./testdata/benchtargets"
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "benchtargets.ClassifyGeneric["
+          - '"classification": "hot-and-complex"'
+        not_contains:
+          - '"function": "github.com/KEINOS/go-verdict/testdata/benchtargets.ClassifyGeneric"'
+      stderr:
+        equals: ""
+
+  - name: omit the fast caveat when nothing was measured
+    args: ["hotspot", "--fast", "--bench", "DoesNotExist", "--benchtime", "100ms", "./testdata/benchtargets"]
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "complexity-hotspot"
+          - "static estimate, not measured cost"
+        not_contains:
+          - "--fast"
+      stderr:
+        equals: ""

@@ -21,6 +21,7 @@ const (
 	testPkgDir     = "/repo/pkg"
 	testSampleDir  = "testdata/sample"
 	testFlagFormat = "--format"
+	testFlagFast   = "--fast"
 )
 
 func TestParseArgsValidation(t *testing.T) {
@@ -74,7 +75,7 @@ func parseArgsCases() []parseArgsCase {
 		},
 		{
 			name:    "fast single pass",
-			args:    []string{"--fast", testPkgArg},
+			args:    []string{testFlagFast, testPkgArg},
 			want:    fastOptions(testPkgArg),
 			wantErr: nil,
 		},

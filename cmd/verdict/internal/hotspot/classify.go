@@ -283,8 +283,16 @@ func addRows(items map[string]*candidate, rows map[string]pprofRow, index int) {
 // addStatic attaches the source position and complexity of every function the
 // static pass scored, and admits target-package functions as candidates.
 func addStatic(items map[string]*candidate, static map[string]complexity.Stat, importPath string) {
+	// joined holds the static symbol every measured candidate maps to, so a
+	// generic instantiation or a closure never becomes a second candidate for
+	// the function that declares it.
+	joined := make(map[string]struct{}, len(items))
+
 	for key, item := range items {
-		stat, ok := static[staticKey(key)]
+		symbol := staticKey(key)
+		joined[symbol] = struct{}{}
+
+		stat, ok := static[symbol]
 		if !ok {
 			continue
 		}
@@ -297,7 +305,7 @@ func addStatic(items map[string]*candidate, static map[string]complexity.Stat, i
 			continue
 		}
 
-		if _, ok := items[stat.Symbol]; ok {
+		if _, ok := joined[stat.Symbol]; ok {
 			continue
 		}
 
@@ -335,40 +343,46 @@ func itemFor(items map[string]*candidate, function string) *candidate {
 	return item
 }
 
-// rankCandidates puts the Pareto front first. A candidate is in the front when
-// no other candidate is at least as strong on every signal and stronger on one.
+// rankCandidates orders candidates by how many other candidates dominate them,
+// so the Pareto front comes first. Dominance is transitive, so every candidate
+// that dominates another is also dominated by strictly fewer candidates than
+// the one it beats, and it therefore always sorts ahead of it.
 func rankCandidates(candidates []candidate) []candidate {
-	front := make([]candidate, 0, len(candidates))
-	rest := make([]candidate, 0, len(candidates))
+	depth := make(map[string]int, len(candidates))
 
 	for _, item := range candidates {
-		if dominated(item, candidates) {
-			rest = append(rest, item)
-
-			continue
-		}
-
-		front = append(front, item)
+		depth[item.function] = dominatorCount(item, candidates)
 	}
 
-	slices.SortFunc(front, compareCandidates)
-	slices.SortFunc(rest, compareCandidates)
+	ranked := slices.Clone(candidates)
 
-	return append(front, rest...)
+	slices.SortFunc(ranked, func(left candidate, right candidate) int {
+		if order := cmp.Compare(depth[left.function], depth[right.function]); order != 0 {
+			return order
+		}
+
+		return compareCandidates(left, right)
+	})
+
+	return ranked
 }
 
-func dominated(item candidate, candidates []candidate) bool {
+// dominatorCount counts the candidates that are at least as strong on every
+// signal and stronger on at least one.
+func dominatorCount(item candidate, candidates []candidate) int {
+	count := 0
+
 	for _, other := range candidates {
 		if other.function == item.function {
 			continue
 		}
 
 		if pareto.Compare(signalRelations(other, item)...) == pareto.CandidateWins {
-			return true
+			count++
 		}
 	}
 
-	return false
+	return count
 }
 
 // signalRelations maps every signal to a Pareto metric. A higher score always

@@ -122,8 +122,6 @@ func (command Command) Run(args []string, output io.Writer) error {
 		return err
 	}
 
-	result = withFastCaveat(result, opts)
-
 	text, err := formatResult(result, opts.format)
 	if err != nil {
 		return err
@@ -326,7 +324,10 @@ func (command Command) scoutInTempDir(
 		return Result{}, err
 	}
 
-	return classify(result, userProfiles(profiles, pkgInfo.userPrefixes()), static, opts.top), nil
+	classified := classify(result, userProfiles(profiles, pkgInfo.userPrefixes()), static, opts.top)
+
+	// The single-pass caveat only makes sense once CPU shares were measured.
+	return withFastCaveat(classified, opts), nil
 }
 
 // staticComplexity scores every function the module declares, so a measured
