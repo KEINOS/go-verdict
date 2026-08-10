@@ -48,6 +48,35 @@ type profileSet struct {
 	Inuse        map[string]pprofRow
 }
 
+// profileSpec pairs one signal with the profile file it is read from and the
+// label used in its error messages.
+type profileSpec struct {
+	path  string
+	label string
+	kind  profileKind
+}
+
+// supported reports whether the kind maps to a known pprof sample index.
+func (kind profileKind) supported() bool {
+	switch kind {
+	case profileCPU, profileAlloc, profileAllocObjects, profileInuse:
+		return true
+	default:
+		return false
+	}
+}
+
+// profileSpecs lists every signal in read order. The three memory views come
+// from the same memory profile file, so they cost no extra benchmark time.
+func profileSpecs(cpuPath string, memPath string) []profileSpec {
+	return []profileSpec{
+		{kind: profileCPU, path: cpuPath, label: "CPU"},
+		{kind: profileAlloc, path: memPath, label: "allocation"},
+		{kind: profileAllocObjects, path: memPath, label: "allocation count"},
+		{kind: profileInuse, path: memPath, label: "retained memory"},
+	}
+}
+
 func mergeRows(left pprofRow, right pprofRow) pprofRow {
 	return pprofRow{
 		Function: right.Function,
@@ -99,6 +128,14 @@ func parseCPUValue(value string) (float64, bool) {
 	return parseUnitValue(value, units)
 }
 
+// parseCountValue reads an object count. pprof prints count samples without a
+// unit suffix, so the raw number is the value.
+func parseCountValue(value string) (float64, bool) {
+	parsed, err := strconv.ParseFloat(value, 64)
+
+	return parsed, err == nil
+}
+
 func parsePercent(value string) (float64, bool) {
 	parsed, err := strconv.ParseFloat(strings.TrimSuffix(value, "%"), 64)
 
@@ -106,7 +143,7 @@ func parsePercent(value string) (float64, bool) {
 }
 
 func parseTop(output []byte, kind profileKind) ([]pprofRow, error) {
-	if kind != profileCPU && kind != profileAlloc {
+	if !kind.supported() {
 		return nil, errUnsupportedProfile
 	}
 
@@ -185,10 +222,10 @@ func parseValue(value string, kind profileKind) (float64, bool) {
 	switch kind {
 	case profileCPU:
 		return parseCPUValue(value)
-	case profileAlloc:
+	case profileAlloc, profileInuse:
 		return parseByteValue(value)
-	case profileAllocObjects, profileInuse:
-		return 0, false
+	case profileAllocObjects:
+		return parseCountValue(value)
 	default:
 		return 0, false
 	}
@@ -196,13 +233,31 @@ func parseValue(value string, kind profileKind) (float64, bool) {
 
 func pprofInvocation(binaryPath string, profilePath string, kind profileKind) invocation {
 	args := []string{"tool", "pprof", "-top"}
-	if kind == profileAlloc {
-		args = append(args, "-alloc_space")
+
+	if flag := sampleFlag(kind); flag != "" {
+		args = append(args, flag)
 	}
 
 	args = append(args, "-nodecount=50", binaryPath, profilePath)
 
 	return invocation{Dir: "", Name: "go", Args: args}
+}
+
+// sampleFlag returns the pprof flag that selects one sample index. The CPU
+// profile has a single sample index, so it needs no flag.
+func sampleFlag(kind profileKind) string {
+	switch kind {
+	case profileAlloc:
+		return "-alloc_space"
+	case profileAllocObjects:
+		return "-alloc_objects"
+	case profileInuse:
+		return "-inuse_space"
+	case profileCPU:
+		return ""
+	default:
+		return ""
+	}
 }
 
 func rowsByFunction(rows []pprofRow) map[string]pprofRow {

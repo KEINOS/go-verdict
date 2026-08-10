@@ -32,6 +32,9 @@ const (
 	defaultFormat    = "text"
 	formatJSON       = "json"
 	defaultPrefixCap = 2
+
+	// profileSignalCount is the number of pprof views read from one run.
+	profileSignalCount = 4
 )
 
 var (
@@ -113,6 +116,8 @@ func (command Command) Run(args []string, output io.Writer) error {
 		return err
 	}
 
+	result = withFastCaveat(result, opts)
+
 	text, err := formatResult(result, opts.format)
 	if err != nil {
 		return err
@@ -130,6 +135,8 @@ func (command Command) compileBenchmark(binaryPath string, pkg string) error {
 	return nil
 }
 
+// runBenchmark runs the compiled benchmark binary once. An empty cpuPath or
+// memPath leaves that profile out of the run.
 func (command Command) runBenchmark(
 	pkgDir string,
 	binaryPath string,
@@ -137,19 +144,22 @@ func (command Command) runBenchmark(
 	memPath string,
 	opts options,
 ) ([]byte, error) {
-	output, err := command.runner.Run(invocation{
-		Dir:  pkgDir,
-		Name: binaryPath,
-		Args: []string{
-			"-test.run=^$",
-			"-test.bench=" + opts.bench,
-			"-test.benchtime=" + opts.benchtime,
-			"-test.count=" + strconv.Itoa(opts.count),
-			"-test.cpuprofile=" + cpuPath,
-			"-test.memprofile=" + memPath,
-			"-test.memprofilerate=1",
-		},
-	})
+	args := []string{
+		"-test.run=^$",
+		"-test.bench=" + opts.bench,
+		"-test.benchtime=" + opts.benchtime,
+		"-test.count=" + strconv.Itoa(opts.count),
+	}
+
+	if cpuPath != "" {
+		args = append(args, "-test.cpuprofile="+cpuPath)
+	}
+
+	if memPath != "" {
+		args = append(args, "-test.memprofile="+memPath, "-test.memprofilerate=1")
+	}
+
+	output, err := command.runner.Run(invocation{Dir: pkgDir, Name: binaryPath, Args: args})
 	if err != nil {
 		return nil, fmt.Errorf("running benchmark workload: %w", err)
 	}
@@ -157,33 +167,75 @@ func (command Command) runBenchmark(
 	return output, nil
 }
 
+// runProfilingPasses collects the profiles and reports whether a benchmark
+// workload actually ran. The default separates the CPU pass from the memory
+// pass because "-test.memprofilerate=1" biases CPU samples toward allocation
+// paths. The memory pass is skipped when the CPU pass ran no benchmark.
+func (command Command) runProfilingPasses(
+	pkgDir string,
+	binaryPath string,
+	cpuPath string,
+	memPath string,
+	opts options,
+) (bool, error) {
+	if opts.fast {
+		output, err := command.runBenchmark(pkgDir, binaryPath, cpuPath, memPath, opts)
+		if err != nil {
+			return false, err
+		}
+
+		return benchmarkRowPattern.Match(output), nil
+	}
+
+	output, err := command.runBenchmark(pkgDir, binaryPath, cpuPath, "", opts)
+	if err != nil {
+		return false, err
+	}
+
+	if !benchmarkRowPattern.Match(output) {
+		return false, nil
+	}
+
+	_, err = command.runBenchmark(pkgDir, binaryPath, "", memPath, opts)
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
 func (command Command) readProfiles(binaryPath string, cpuPath string, memPath string) (profileSet, error) {
-	cpuOutput, err := command.runner.Run(pprofInvocation(binaryPath, cpuPath, profileCPU))
-	if err != nil {
-		return profileSet{}, fmt.Errorf("reading CPU profile: %w", err)
-	}
+	rows := make(map[profileKind]map[string]pprofRow, profileSignalCount)
 
-	allocOutput, err := command.runner.Run(pprofInvocation(binaryPath, memPath, profileAlloc))
-	if err != nil {
-		return profileSet{}, fmt.Errorf("reading allocation profile: %w", err)
-	}
+	for _, spec := range profileSpecs(cpuPath, memPath) {
+		parsed, err := command.readProfile(binaryPath, spec)
+		if err != nil {
+			return profileSet{}, err
+		}
 
-	cpuRows, err := parseTop(cpuOutput, profileCPU)
-	if err != nil {
-		return profileSet{}, fmt.Errorf("parsing CPU profile: %w", err)
-	}
-
-	allocRows, err := parseTop(allocOutput, profileAlloc)
-	if err != nil {
-		return profileSet{}, fmt.Errorf("parsing allocation profile: %w", err)
+		rows[spec.kind] = parsed
 	}
 
 	return profileSet{
-		CPU:          rowsByFunction(cpuRows),
-		Alloc:        rowsByFunction(allocRows),
-		AllocObjects: nil,
-		Inuse:        nil,
+		CPU:          rows[profileCPU],
+		Alloc:        rows[profileAlloc],
+		AllocObjects: rows[profileAllocObjects],
+		Inuse:        rows[profileInuse],
 	}, nil
+}
+
+func (command Command) readProfile(binaryPath string, spec profileSpec) (map[string]pprofRow, error) {
+	output, err := command.runner.Run(pprofInvocation(binaryPath, spec.path, spec.kind))
+	if err != nil {
+		return nil, fmt.Errorf("reading %s profile: %w", spec.label, err)
+	}
+
+	parsed, err := parseTop(output, spec.kind)
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s profile: %w", spec.label, err)
+	}
+
+	return rowsByFunction(parsed), nil
 }
 
 func (command Command) resolvePackage(pkg string) (packageInfo, error) {
@@ -241,12 +293,12 @@ func (command Command) scout(opts options) (Result, error) {
 		return Result{}, err
 	}
 
-	benchOutput, err := command.runBenchmark(pkgInfo.Dir, binaryPath, cpuPath, memPath, opts)
+	benchmarked, err := command.runProfilingPasses(pkgInfo.Dir, binaryPath, cpuPath, memPath, opts)
 	if err != nil {
 		return Result{}, err
 	}
 
-	if !benchmarkRowPattern.Match(benchOutput) {
+	if !benchmarked {
 		result.Classification = classNoBenchmark
 		result.Reason = classNoBenchmark
 		result.Caveat = "No benchmark workload ran. Add BenchmarkXxx or pass --bench. See: verdict help bootstrap."
@@ -316,6 +368,9 @@ Options:
       Benchmark run count. Default: 1.
   --format text|json
       Output format. Default: text.
+  --fast
+      Profile CPU and memory in one benchmark pass instead of two.
+      Halves the run time and lowers CPU accuracy.
 
 Workflow guidance: verdict help hotspot
 `
@@ -344,6 +399,7 @@ func parseArgs(args []string) (options, error) {
 	flags.StringVar(&opts.benchtime, "benchtime", opts.benchtime, "benchmark duration or Nx count")
 	flags.IntVar(&opts.count, "count", opts.count, "benchmark run count")
 	flags.StringVar(&opts.format, "format", opts.format, "output format: text or json")
+	flags.BoolVar(&opts.fast, "fast", opts.fast, "profile CPU and memory in one pass instead of two")
 
 	err := flags.Parse(args)
 	if err != nil {

@@ -8,7 +8,12 @@ import (
 	"strings"
 )
 
-const schemaVersion = 1
+const (
+	schemaVersion = 1
+
+	fastCaveat = "CPU shares were measured with allocation profiling enabled (--fast), " +
+		"so treat the CPU ranking as approximate."
+)
 
 // Result is the JSON-serializable hotspot report.
 type Result struct {
@@ -43,6 +48,26 @@ type Choice struct {
 	Reason         string `json:"reason"`
 	Alloc          Metric `json:"alloc"`
 	CPU            Metric `json:"cpu"`
+}
+
+// appendCaveat joins one more caveat sentence to an existing caveat.
+func appendCaveat(existing string, addition string) string {
+	if existing == "" {
+		return addition
+	}
+
+	return existing + " " + addition
+}
+
+// withFastCaveat records that --fast lowered the CPU accuracy of the report.
+func withFastCaveat(result Result, opts options) Result {
+	if !opts.fast {
+		return result
+	}
+
+	result.Caveat = appendCaveat(result.Caveat, fastCaveat)
+
+	return result
 }
 
 func allocMetric(row pprofRow) Metric {
