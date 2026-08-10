@@ -20,6 +20,10 @@ import (
 
 // Stat holds the static complexity of one function.
 type Stat struct {
+	// ImportPath is the package that declares the function. Callers compare it
+	// directly instead of guessing package ownership from the symbol, because
+	// an import path may itself contain a dot.
+	ImportPath string
 	Symbol     string
 	File       string
 	Line       int
@@ -114,6 +118,7 @@ func mergeReading(merged map[string]Stat, importPath string, item reading) {
 	stat, ok := merged[symbol]
 	if !ok {
 		stat = Stat{
+			ImportPath: importPath,
 			Symbol:     symbol,
 			File:       filepath.Base(item.pos.Filename),
 			Line:       item.pos.Line,

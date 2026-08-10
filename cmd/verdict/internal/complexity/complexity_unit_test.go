@@ -46,6 +46,7 @@ func TestAnalyzeRecordsSourcePosition(t *testing.T) {
 	index := analyzeSample(t)
 
 	for symbol, stat := range index {
+		require.Equal(t, sampleImportPath, stat.ImportPath, symbol)
 		require.Equal(t, "sample.go", stat.File, symbol)
 		require.Positive(t, stat.Line, symbol)
 	}

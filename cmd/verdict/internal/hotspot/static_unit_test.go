@@ -33,6 +33,24 @@ func TestComplexityOnlyRanksAndScopesCandidates(t *testing.T) {
 	}
 }
 
+func TestComplexityOnlyIgnoresAPackageWithASharedDotPrefix(t *testing.T) {
+	t.Parallel()
+
+	// A module may hold both "example.com/project/pkg" and a directory whose
+	// name only starts with it, such as a versioned suffix. Prefix matching
+	// would treat the second one as the target package.
+	sibling := testImportPath + ".v2.Huge"
+
+	base := testResult()
+	got := classify(base, emptyProfiles(), map[string]complexity.Stat{
+		sibling: statOf(sibling, 99, 99),
+	}, defaultTop)
+
+	require.Equal(t, classNoClearHotspot, got.Classification,
+		"only the target package can qualify on complexity alone")
+	require.Empty(t, got.Function)
+}
+
 func TestComplexityOnlyBreaksTiesBySymbol(t *testing.T) {
 	t.Parallel()
 
@@ -90,8 +108,11 @@ func TestStaticComplexityReportsFailures(t *testing.T) {
 	require.ErrorContains(t, err, "analyzing complexity")
 }
 
+// statOf builds a static result for a symbol. No test symbol has a method
+// receiver, so the declaring package is everything before the last dot.
 func statOf(symbol string, cyclomatic int, cognitive int) complexity.Stat {
 	return complexity.Stat{
+		ImportPath: symbol[:strings.LastIndex(symbol, ".")],
 		Symbol:     symbol,
 		File:       "sample.go",
 		Line:       1,

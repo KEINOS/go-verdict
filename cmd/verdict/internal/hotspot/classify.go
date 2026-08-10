@@ -66,6 +66,7 @@ type candidate struct {
 	retained     Metric
 	complexity   Complexity
 	scores       [signalCount]float64
+	dominators   int
 	line         int
 }
 
@@ -301,7 +302,7 @@ func addStatic(items map[string]*candidate, static map[string]complexity.Stat, i
 	}
 
 	for _, stat := range static {
-		if !declaredIn(stat.Symbol, importPath) || complexityScore(stat) < qualifies {
+		if stat.ImportPath != importPath || complexityScore(stat) < qualifies {
 			continue
 		}
 
@@ -318,7 +319,7 @@ func applyStatic(item *candidate, stat complexity.Stat, importPath string) {
 	item.line = stat.Line
 	item.complexity = Complexity{Cyclomatic: stat.Cyclomatic, Cognitive: stat.Cognitive}
 
-	if declaredIn(stat.Symbol, importPath) {
+	if stat.ImportPath == importPath {
 		item.scores[idxComplexity] = complexityScore(stat)
 	}
 }
@@ -336,6 +337,7 @@ func itemFor(items map[string]*candidate, function string) *candidate {
 			retained:     zeroMetric(unitBytes),
 			complexity:   Complexity{Cyclomatic: 0, Cognitive: 0},
 			scores:       [signalCount]float64{},
+			dominators:   0,
 		}
 		items[function] = item
 	}
@@ -348,16 +350,14 @@ func itemFor(items map[string]*candidate, function string) *candidate {
 // that dominates another is also dominated by strictly fewer candidates than
 // the one it beats, and it therefore always sorts ahead of it.
 func rankCandidates(candidates []candidate) []candidate {
-	depth := make(map[string]int, len(candidates))
-
-	for _, item := range candidates {
-		depth[item.function] = dominatorCount(item, candidates)
-	}
-
 	ranked := slices.Clone(candidates)
 
+	for index := range ranked {
+		ranked[index].dominators = dominatorCount(ranked[index], candidates)
+	}
+
 	slices.SortFunc(ranked, func(left candidate, right candidate) int {
-		if order := cmp.Compare(depth[left.function], depth[right.function]); order != 0 {
+		if order := cmp.Compare(left.dominators, right.dominators); order != 0 {
 			return order
 		}
 
@@ -452,10 +452,6 @@ func complexityScore(stat complexity.Stat) float64 {
 		float64(stat.Cyclomatic)/cyclomaticThreshold,
 		float64(stat.Cognitive)/cognitiveThreshold,
 	)
-}
-
-func declaredIn(symbol string, importPath string) bool {
-	return importPath != "" && strings.HasPrefix(symbol, importPath+".")
 }
 
 func isBenchmarkFunction(function string) bool {
