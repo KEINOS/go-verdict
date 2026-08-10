@@ -18,6 +18,9 @@ const (
 	testWorkFunc   = "example.com/project/pkg.Work"
 	testAllocFunc  = "example.com/project/pkg.Alloc"
 	testRetainFunc = "example.com/project/pkg.Retain"
+	testPkgDir     = "/repo/pkg"
+	testSampleDir  = "testdata/sample"
+	testFlagFormat = "--format"
 )
 
 func TestParseArgsValidation(t *testing.T) {
@@ -43,8 +46,8 @@ func TestParseArgsValidation(t *testing.T) {
 type parseArgsCase struct {
 	wantErr error
 	name    string
-	want    options
 	args    []string
+	want    options
 }
 
 func parseArgsCases() []parseArgsCase {
@@ -57,7 +60,7 @@ func parseArgsCases() []parseArgsCase {
 		},
 		{
 			name: "custom values",
-			args: []string{"--bench", "BenchmarkFoo", "--benchtime", "25x", "--count", "3", "--format", "json", testPkgArg},
+			args: []string{"--bench", "BenchmarkFoo", "--benchtime", "25x", "--count", "3", testFlagFormat, "json", testPkgArg},
 			want: options{
 				bench:     "BenchmarkFoo",
 				benchtime: "25x",
@@ -179,20 +182,7 @@ func TestUserRowsFiltersAndNormalizesVendor(t *testing.T) {
 func TestClassifyMixedAndTieBreaking(t *testing.T) {
 	t.Parallel()
 
-	base := Result{
-		SchemaVersion:  schemaVersion,
-		Package:        testPkgArg,
-		ImportPath:     testImportPath,
-		Benchmark:      ".",
-		Classification: classNoClearHotspot,
-		Reason:         classNoClearHotspot,
-		Function:       "",
-		CPU:            zeroMetric(),
-		Alloc:          zeroMetric(),
-		Secondary:      nil,
-		Caveat:         "",
-		Next:           "next",
-	}
+	base := testResult()
 
 	got := classify(base, profileSet{
 		CPU: map[string]pprofRow{
@@ -204,7 +194,7 @@ func TestClassifyMixedAndTieBreaking(t *testing.T) {
 		},
 		AllocObjects: nil,
 		Inuse:        nil,
-	})
+	}, nil)
 	require.Equal(t, classMixedHotspot, got.Classification)
 	require.Equal(t, testMixedFunc, got.Function)
 	require.Nil(t, got.Secondary)
@@ -219,7 +209,7 @@ func TestClassifyMixedAndTieBreaking(t *testing.T) {
 		},
 		AllocObjects: nil,
 		Inuse:        nil,
-	})
+	}, nil)
 	require.Equal(t, classCPUHotspot, got.Classification)
 	require.Equal(t, "example.com/project/pkg.Alfa", got.Function)
 	require.NotNil(t, got.Secondary)
@@ -229,25 +219,16 @@ func TestClassifyMixedAndTieBreaking(t *testing.T) {
 func TestClassifyNoClear(t *testing.T) {
 	t.Parallel()
 
-	got := classify(Result{
-		SchemaVersion:  schemaVersion,
-		Package:        testPkgArg,
-		ImportPath:     testImportPath,
-		Benchmark:      ".",
-		Classification: "",
-		Reason:         "",
-		Function:       "",
-		CPU:            zeroMetric(),
-		Alloc:          zeroMetric(),
-		Secondary:      nil,
-		Caveat:         "",
-		Next:           "next",
-	}, profileSet{
+	base := testResult()
+	base.Classification = ""
+	base.Reason = ""
+
+	got := classify(base, profileSet{
 		CPU:          map[string]pprofRow{},
 		Alloc:        map[string]pprofRow{},
 		AllocObjects: map[string]pprofRow{},
 		Inuse:        map[string]pprofRow{},
-	})
+	}, nil)
 
 	require.Equal(t, classNoClearHotspot, got.Classification)
 	require.Contains(t, got.Caveat, "No clear")
@@ -256,20 +237,12 @@ func TestClassifyNoClear(t *testing.T) {
 func TestFormatResultTextAndJSON(t *testing.T) {
 	t.Parallel()
 
-	result := Result{
-		SchemaVersion:  schemaVersion,
-		Package:        testPkgArg,
-		ImportPath:     testImportPath,
-		Benchmark:      ".",
-		Classification: classCPUHotspot,
-		Reason:         classCPUHotspot,
-		Function:       "example.com/project/pkg.Work",
-		CPU:            Metric{FlatMS: 10, FlatBytes: 0, FlatPct: 20, CumMS: 30, CumBytes: 0, CumPct: 40},
-		Alloc:          zeroMetric(),
-		Secondary:      nil,
-		Caveat:         "",
-		Next:           "Judge candidate changes with verdict.",
-	}
+	result := testResult()
+	result.Classification = classCPUHotspot
+	result.Reason = classCPUHotspot
+	result.Function = testWorkFunc
+	result.CPU = Metric{FlatMS: 10, FlatBytes: 0, FlatPct: 20, CumMS: 30, CumBytes: 0, CumPct: 40}
+	result.Next = "Judge candidate changes with verdict."
 
 	text, err := formatResult(result, defaultFormat)
 	require.NoError(t, err)
@@ -278,7 +251,7 @@ func TestFormatResultTextAndJSON(t *testing.T) {
 
 	jsonText, err := formatResult(result, formatJSON)
 	require.NoError(t, err)
-	require.Contains(t, jsonText, `"schema_version": 1`)
+	require.Contains(t, jsonText, `"schema_version": 2`)
 	require.Contains(t, jsonText, `"reason": "cpu-hotspot"`)
 
 	_, err = formatResult(result, "yaml")
@@ -300,28 +273,24 @@ func TestCommandRunSuccessNoBenchmarkAndErrors(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, out.String(), classMixedHotspot)
 		require.Len(t, runner.calls, fullRunCallCount)
-		require.Equal(t, "/repo/pkg", runner.calls[2].Dir)
-		require.Contains(t, runner.calls[2].Args, "-test.bench=BenchmarkWork")
-		require.Contains(t, runner.calls[4].Args, "-nodecount=50")
-		require.Contains(t, runner.calls[5].Args, "-alloc_space")
+		require.Equal(t, testPkgDir, runner.calls[3].Dir)
+		require.Contains(t, runner.calls[3].Args, "-test.bench=BenchmarkWork")
+		require.Contains(t, runner.calls[5].Args, "-nodecount=50")
+		require.Contains(t, runner.calls[6].Args, "-alloc_space")
 	})
 
 	t.Run("no benchmark", func(t *testing.T) {
 		t.Parallel()
 
 		runner := newFakeRunner()
-		runner.outputs = []fakeOutput{
-			{out: goListJSON(testImportPath, "/repo/pkg"), err: nil},
-			{out: []byte("compiled"), err: nil},
-			{out: []byte("PASS\n"), err: nil},
-		}
+		runner.outputs = noBenchmarkOutputs()
 
 		var out strings.Builder
 
 		err := (Command{runner: runner}).Run([]string{testPkgArg}, &out)
 		require.NoError(t, err)
-		require.Contains(t, out.String(), "no benchmark workload")
-		require.Len(t, runner.calls, 3)
+		require.Contains(t, out.String(), "No benchmark workload ran")
+		require.Len(t, runner.calls, noBenchmarkCallCount)
 	})
 
 	t.Run("pprof error", func(t *testing.T) {
@@ -394,14 +363,16 @@ func hardErrorCases() []struct {
 
 func fakeOutputsUntilCompileError() []fakeOutput {
 	return []fakeOutput{
-		{out: goListJSON(testImportPath, "/repo/pkg"), err: nil},
+		{out: goListJSON(testImportPath, testPkgDir), err: nil},
+		{out: goListDepsJSON(), err: nil},
 		{out: nil, err: errFakeRun},
 	}
 }
 
 func fakeOutputsUntilBenchmarkError() []fakeOutput {
 	return []fakeOutput{
-		{out: goListJSON(testImportPath, "/repo/pkg"), err: nil},
+		{out: goListJSON(testImportPath, testPkgDir), err: nil},
+		{out: goListDepsJSON(), err: nil},
 		{out: []byte("compiled"), err: nil},
 		{out: nil, err: errFakeRun},
 	}
@@ -428,7 +399,7 @@ func TestBaseResultFallbackCaveatAndNoClearText(t *testing.T) {
 
 	result := baseResult(
 		defaultOptions(testPkgArg),
-		packageInfo{ImportPath: testImportPath, Dir: "/repo/pkg", Module: nil},
+		packageInfo{ImportPath: testImportPath, Dir: testPkgDir, Module: nil, GoFiles: nil},
 	)
 
 	require.Contains(t, result.Caveat, "Module path was unavailable")
@@ -477,6 +448,28 @@ func newFakeRunner() *fakeRunner {
 
 func zeroOptions() options {
 	return options{bench: "", benchtime: "", count: 0, format: "", pkg: "", fast: false}
+}
+
+// testResult is a fully specified baseline report for classification and
+// formatting tests.
+func testResult() Result {
+	return Result{
+		SchemaVersion:  schemaVersion,
+		Package:        testPkgArg,
+		ImportPath:     testImportPath,
+		Benchmark:      ".",
+		Classification: classNoClearHotspot,
+		Reason:         classNoClearHotspot,
+		Function:       "",
+		File:           "",
+		Line:           0,
+		CPU:            zeroMetric(),
+		Alloc:          zeroMetric(),
+		Complexity:     Complexity{Cyclomatic: 0, Cognitive: 0},
+		Secondary:      nil,
+		Caveat:         "",
+		Next:           "next",
+	}
 }
 
 func (runner *fakeRunner) Run(command invocation) ([]byte, error) {

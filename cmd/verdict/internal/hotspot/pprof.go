@@ -17,8 +17,10 @@ const (
 )
 
 var (
-	inlineMarker = regexp.MustCompile(`\s+\(inline\)$`)
-	spacePattern = regexp.MustCompile(`\s+`)
+	inlineMarker  = regexp.MustCompile(`\s+\(inline\)$`)
+	spacePattern  = regexp.MustCompile(`\s+`)
+	shapeSuffix   = regexp.MustCompile(`\[[^\]]*\]`)
+	closureSuffix = regexp.MustCompile(`\.func\d+(\.\d+)*$`)
 
 	errNoPprofRows        = errors.New("pprof top output has no rows")
 	errUnsupportedProfile = errors.New("unsupported profile kind")
@@ -96,6 +98,23 @@ func normalizeSymbol(symbol string) string {
 	}
 
 	return spacePattern.ReplaceAllString(symbol, " ")
+}
+
+// staticKey turns a pprof symbol into the symbol the static analyzer uses. A
+// generic instantiation loses its shape suffix, and a closure is attributed to
+// the function that declares it.
+func staticKey(function string) string {
+	return closureSuffix.ReplaceAllString(shapeSuffix.ReplaceAllString(function, ""), "")
+}
+
+// userProfiles keeps only the rows that belong to the user's own module.
+func userProfiles(profiles profileSet, prefixes []string) profileSet {
+	return profileSet{
+		CPU:          userRows(profiles.CPU, prefixes),
+		Alloc:        userRows(profiles.Alloc, prefixes),
+		AllocObjects: userRows(profiles.AllocObjects, prefixes),
+		Inuse:        userRows(profiles.Inuse, prefixes),
+	}
 }
 
 func parseByteValue(value string) (float64, bool) {

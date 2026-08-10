@@ -12,8 +12,12 @@ import (
 
 const (
 	benchmarkRunLine = "BenchmarkWork-10 1 100 ns/op\nPASS\n"
-	fullRunCallCount = 8
-	fastRunCallCount = 7
+
+	// Call counts for one hotspot run: two package listings, one compile, the
+	// benchmark passes, and one pprof read per signal.
+	fullRunCallCount     = 9
+	fastRunCallCount     = 8
+	noBenchmarkCallCount = 4
 )
 
 func TestPprofInvocationSelectsProfileKind(t *testing.T) {
@@ -98,11 +102,11 @@ func TestCommandRunUsesSeparateProfilingPasses(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, runner.calls, fullRunCallCount)
 
-	cpuPass := strings.Join(runner.calls[2].Args, " ")
+	cpuPass := strings.Join(runner.calls[3].Args, " ")
 	require.Contains(t, cpuPass, "-test.cpuprofile=")
 	require.NotContains(t, cpuPass, "-test.memprofile", "allocation profiling biases the CPU profile")
 
-	memoryPass := strings.Join(runner.calls[3].Args, " ")
+	memoryPass := strings.Join(runner.calls[4].Args, " ")
 	require.Contains(t, memoryPass, "-test.memprofile=")
 	require.Contains(t, memoryPass, "-test.memprofilerate=1")
 	require.NotContains(t, memoryPass, "-test.cpuprofile")
@@ -120,7 +124,7 @@ func TestCommandRunFastCombinesProfilingIntoOnePass(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, runner.calls, fastRunCallCount)
 
-	onePass := strings.Join(runner.calls[2].Args, " ")
+	onePass := strings.Join(runner.calls[3].Args, " ")
 	require.Contains(t, onePass, "-test.cpuprofile=")
 	require.Contains(t, onePass, "-test.memprofile=")
 	require.Contains(t, out.String(), "--fast", "the caveat must name the flag that lowered CPU accuracy")
@@ -134,7 +138,8 @@ func TestHelpTextDocumentsFast(t *testing.T) {
 
 func benchmarkRunOutputs() []fakeOutput {
 	return []fakeOutput{
-		{out: goListJSON(testImportPath, "/repo/pkg"), err: nil},
+		{out: goListJSON(testImportPath, testPkgDir), err: nil},
+		{out: goListDepsJSON(), err: nil},
 		{out: []byte("compiled"), err: nil},
 		{out: []byte(benchmarkRunLine), err: nil},
 		{out: []byte(benchmarkRunLine), err: nil},

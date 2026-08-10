@@ -9,26 +9,39 @@ import (
 )
 
 const (
-	schemaVersion = 1
+	schemaVersion = 2
 
 	fastCaveat = "CPU shares were measured with allocation profiling enabled (--fast), " +
 		"so treat the CPU ranking as approximate."
+
+	caveatNoBenchmark = "No benchmark workload ran. Add BenchmarkXxx or pass --bench. See: verdict help bootstrap."
+
+	caveatNoBenchmarkStatic = "No benchmark workload ran, so this is a static estimate, not measured cost. " +
+		"Add a benchmark to raise accuracy. See: verdict help bootstrap."
+
+	caveatNoClearHotspot = "No clear user-code hotspot found for this benchmark workload."
+
+	caveatNoClearHotspotStatic = "The profiles show no clear user-code hotspot, so this is a static estimate, " +
+		"not measured cost. Widen the benchmark workload to raise accuracy. See: verdict help bootstrap."
 )
 
 // Result is the JSON-serializable hotspot report.
 type Result struct {
-	Secondary      *Choice `json:"secondary"`
-	Benchmark      string  `json:"benchmark"`
-	Caveat         string  `json:"caveat"`
-	Classification string  `json:"classification"`
-	Function       string  `json:"function"`
-	ImportPath     string  `json:"import_path"`
-	Next           string  `json:"next"`
-	Package        string  `json:"package"`
-	Reason         string  `json:"reason"`
-	Alloc          Metric  `json:"alloc"`
-	CPU            Metric  `json:"cpu"`
-	SchemaVersion  int     `json:"schema_version"`
+	Secondary      *Choice    `json:"secondary"`
+	Benchmark      string     `json:"benchmark"`
+	Caveat         string     `json:"caveat"`
+	Classification string     `json:"classification"`
+	File           string     `json:"file"`
+	Function       string     `json:"function"`
+	ImportPath     string     `json:"import_path"`
+	Next           string     `json:"next"`
+	Package        string     `json:"package"`
+	Reason         string     `json:"reason"`
+	Alloc          Metric     `json:"alloc"`
+	CPU            Metric     `json:"cpu"`
+	Complexity     Complexity `json:"complexity"`
+	Line           int        `json:"line"`
+	SchemaVersion  int        `json:"schema_version"`
 }
 
 // Metric describes one profile contribution.
@@ -41,13 +54,22 @@ type Metric struct {
 	FlatMS    float64 `json:"flat_ms,omitempty"`
 }
 
+// Complexity describes the static complexity of one function.
+type Complexity struct {
+	Cyclomatic int `json:"cyclomatic"`
+	Cognitive  int `json:"cognitive"`
+}
+
 // Choice describes a primary or secondary hotspot candidate.
 type Choice struct {
-	Classification string `json:"classification"`
-	Function       string `json:"function"`
-	Reason         string `json:"reason"`
-	Alloc          Metric `json:"alloc"`
-	CPU            Metric `json:"cpu"`
+	Classification string     `json:"classification"`
+	File           string     `json:"file"`
+	Function       string     `json:"function"`
+	Reason         string     `json:"reason"`
+	Alloc          Metric     `json:"alloc"`
+	CPU            Metric     `json:"cpu"`
+	Complexity     Complexity `json:"complexity"`
+	Line           int        `json:"line"`
 }
 
 // appendCaveat joins one more caveat sentence to an existing caveat.
@@ -83,8 +105,11 @@ func baseResult(opts options, pkgInfo packageInfo) Result {
 		Classification: classNoClearHotspot,
 		Reason:         classNoClearHotspot,
 		Function:       "",
+		File:           "",
+		Line:           0,
 		CPU:            zeroMetric(),
 		Alloc:          zeroMetric(),
+		Complexity:     Complexity{Cyclomatic: 0, Cognitive: 0},
 		Secondary:      nil,
 		Caveat:         "",
 		Next:           "Optimize a candidate, then judge before/after benchmark results with verdict.",
@@ -124,22 +149,48 @@ func formatText(result Result) string {
 	case classNoClearHotspot:
 		return withCaveat(result.Package+": no clear user-code hotspot found for this benchmark workload.\n", result.Caveat)
 	default:
-		parts := []string{fmt.Sprintf("%s: inspect %s (%s", result.Package, result.Function, result.Classification)}
-		if result.CPU.FlatPct > 0 || result.CPU.CumPct > 0 {
-			parts = append(parts, fmt.Sprintf("cpu flat %.1f%%, cpu cum %.1f%%", result.CPU.FlatPct, result.CPU.CumPct))
-		}
+		text := fmt.Sprintf(
+			"%s: inspect %s%s (%s)\nNext: %s\n",
+			result.Package, result.Function, sourcePosition(result), strings.Join(signalParts(result), "; "), result.Next,
+		)
 
-		if result.Alloc.FlatPct > 0 || result.Alloc.CumPct > 0 {
-			parts = append(parts, fmt.Sprintf("alloc flat %.1f%%, alloc cum %.1f%%", result.Alloc.FlatPct, result.Alloc.CumPct))
-		}
-
-		text := strings.Join(parts, "; ") + ")\nNext: " + result.Next + "\n"
 		if result.Caveat != "" {
 			text += "Caveat: " + result.Caveat + "\n"
 		}
 
 		return text
 	}
+}
+
+// signalParts lists the classification and every signal that has a value.
+func signalParts(result Result) []string {
+	parts := []string{result.Classification}
+
+	if result.CPU.FlatPct > 0 || result.CPU.CumPct > 0 {
+		parts = append(parts, fmt.Sprintf("cpu flat %.1f%%, cpu cum %.1f%%", result.CPU.FlatPct, result.CPU.CumPct))
+	}
+
+	if result.Alloc.FlatPct > 0 || result.Alloc.CumPct > 0 {
+		parts = append(parts, fmt.Sprintf("alloc flat %.1f%%, alloc cum %.1f%%", result.Alloc.FlatPct, result.Alloc.CumPct))
+	}
+
+	if result.Complexity.Cyclomatic > 0 || result.Complexity.Cognitive > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"cyclomatic %d, cognitive %d", result.Complexity.Cyclomatic, result.Complexity.Cognitive,
+		))
+	}
+
+	return parts
+}
+
+// sourcePosition renders " at file:line" when the static pass located the
+// function, and nothing otherwise.
+func sourcePosition(result Result) string {
+	if result.File == "" || result.Line <= 0 {
+		return ""
+	}
+
+	return fmt.Sprintf(" at %s:%d", result.File, result.Line)
 }
 
 func withCaveat(text string, caveat string) string {

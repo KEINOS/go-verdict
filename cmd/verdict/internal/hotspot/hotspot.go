@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/KEINOS/go-verdict/cmd/verdict/internal/complexity"
 )
 
 const (
@@ -79,8 +81,9 @@ type packageInfo struct {
 	Module *struct {
 		Path string `json:"Path"`
 	} `json:"Module"`
-	ImportPath string `json:"ImportPath"`
-	Dir        string `json:"Dir"`
+	ImportPath string   `json:"ImportPath"`
+	Dir        string   `json:"Dir"`
+	GoFiles    []string `json:"GoFiles"`
 }
 
 /* Constructors and Methods */
@@ -275,7 +278,10 @@ func (command Command) scout(opts options) (Result, error) {
 		return Result{}, err
 	}
 
-	result := baseResult(opts, pkgInfo)
+	static, err := command.staticComplexity(opts.pkg, pkgInfo)
+	if err != nil {
+		return Result{}, err
+	}
 
 	tmpDir, err := os.MkdirTemp("", "verdict-hotspot-*")
 	if err != nil {
@@ -284,11 +290,21 @@ func (command Command) scout(opts options) (Result, error) {
 
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
+	return command.scoutInTempDir(tmpDir, opts, pkgInfo, static)
+}
+
+func (command Command) scoutInTempDir(
+	tmpDir string,
+	opts options,
+	pkgInfo packageInfo,
+	static map[string]complexity.Stat,
+) (Result, error) {
+	result := baseResult(opts, pkgInfo)
 	binaryPath := filepath.Join(tmpDir, "hotspot.test")
 	cpuPath := filepath.Join(tmpDir, "cpu.out")
 	memPath := filepath.Join(tmpDir, "mem.out")
 
-	err = command.compileBenchmark(binaryPath, opts.pkg)
+	err := command.compileBenchmark(binaryPath, opts.pkg)
 	if err != nil {
 		return Result{}, err
 	}
@@ -299,11 +315,7 @@ func (command Command) scout(opts options) (Result, error) {
 	}
 
 	if !benchmarked {
-		result.Classification = classNoBenchmark
-		result.Reason = classNoBenchmark
-		result.Caveat = "No benchmark workload ran. Add BenchmarkXxx or pass --bench. See: verdict help bootstrap."
-
-		return result, nil
+		return withoutBenchmark(result, static), nil
 	}
 
 	profiles, err := command.readProfiles(binaryPath, cpuPath, memPath)
@@ -311,12 +323,69 @@ func (command Command) scout(opts options) (Result, error) {
 		return Result{}, err
 	}
 
-	return classify(result, profileSet{
-		CPU:          userRows(profiles.CPU, pkgInfo.userPrefixes()),
-		Alloc:        userRows(profiles.Alloc, pkgInfo.userPrefixes()),
-		AllocObjects: userRows(profiles.AllocObjects, pkgInfo.userPrefixes()),
-		Inuse:        userRows(profiles.Inuse, pkgInfo.userPrefixes()),
-	}), nil
+	return classify(result, userProfiles(profiles, pkgInfo.userPrefixes()), static), nil
+}
+
+// staticComplexity scores every function the module declares, so a measured
+// candidate can carry its source position and complexity, and so a package
+// without a benchmark still has something to suggest.
+func (command Command) staticComplexity(pkg string, pkgInfo packageInfo) (map[string]complexity.Stat, error) {
+	packages, err := command.resolveModulePackages(pkg, pkgInfo.modulePath())
+	if err != nil {
+		return nil, err
+	}
+
+	stats, err := complexity.Analyze(packages)
+	if err != nil {
+		return nil, fmt.Errorf("analyzing complexity: %w", err)
+	}
+
+	index := make(map[string]complexity.Stat, len(stats))
+	for _, stat := range stats {
+		index[stat.Symbol] = stat
+	}
+
+	return index, nil
+}
+
+// resolveModulePackages lists the packages of the target module that the
+// package depends on, including the package itself. Without a module path
+// there is no trustworthy user-code boundary, so nothing is analyzed.
+func (command Command) resolveModulePackages(pkg string, modulePath string) ([]complexity.Package, error) {
+	if modulePath == "" {
+		return nil, nil
+	}
+
+	output, err := command.runner.Run(invocation{
+		Dir: "", Name: "go", Args: []string{"list", "-deps", "-json", pkg},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing module packages: %w", err)
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(output))
+	packages := make([]complexity.Package, 0)
+
+	for decoder.More() {
+		var item packageInfo
+
+		err = decoder.Decode(&item)
+		if err != nil {
+			return nil, fmt.Errorf("decoding go list output: %w", err)
+		}
+
+		if item.Module == nil || item.Module.Path != modulePath || len(item.GoFiles) == 0 {
+			continue
+		}
+
+		packages = append(packages, complexity.Package{
+			ImportPath: item.ImportPath,
+			Dir:        item.Dir,
+			Files:      item.GoFiles,
+		})
+	}
+
+	return packages, nil
 }
 
 // execRunner
@@ -335,6 +404,14 @@ func (execRunner) Run(command invocation) ([]byte, error) {
 }
 
 // packageInfo
+
+func (pkgInfo packageInfo) modulePath() string {
+	if pkgInfo.Module == nil {
+		return ""
+	}
+
+	return pkgInfo.Module.Path
+}
 
 func (pkgInfo packageInfo) userPrefixes() []string {
 	prefixes := make([]string, 0, defaultPrefixCap)
