@@ -4,6 +4,7 @@ package hotspot
 // one Result.
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -38,11 +39,20 @@ func TestFormatTextCoversEveryReportShape(t *testing.T) {
 	noBenchmark := testResult()
 	noBenchmark.Classification = classNoBenchmark
 	noBenchmark.Caveat = caveatNoBenchmark
-	require.Contains(t, formatText(noBenchmark), "no benchmark workload ran")
-	require.Contains(t, formatText(noBenchmark), "Caveat:")
+
+	benchmarkText := formatText(noBenchmark)
+	require.Contains(t, benchmarkText, "no benchmark workload ran")
+	require.Contains(t, benchmarkText, "Caveat: Add a BenchmarkXxx")
+	require.Equal(t, 1, strings.Count(strings.ToLower(benchmarkText), "benchmark workload ran"),
+		"the summary states what happened and the caveat adds only the advice")
 
 	noClear := testResult()
-	require.Contains(t, formatText(noClear), "no clear user-code hotspot")
+	noClear.Caveat = caveatNoClearHotspot
+
+	clearText := formatText(noClear)
+	require.Contains(t, clearText, "no clear user-code hotspot")
+	require.Contains(t, clearText, "Caveat: The cost may be spread")
+	require.Equal(t, 1, strings.Count(strings.ToLower(clearText), "no clear user-code hotspot"))
 
 	suggestion := testResult()
 	suggestion.Classification = classHotAndComplex

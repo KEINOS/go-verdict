@@ -139,7 +139,7 @@ func TestClassifyReportsNoClearHotspot(t *testing.T) {
 	got := classify(testResult(), emptyProfiles(), nil, defaultTop)
 
 	require.Equal(t, classNoClearHotspot, got.Classification)
-	require.Contains(t, got.Caveat, "No clear")
+	require.Contains(t, got.Caveat, "The cost may be spread")
 	require.Empty(t, got.Function)
 }
 

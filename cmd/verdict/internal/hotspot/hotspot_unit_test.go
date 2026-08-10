@@ -231,18 +231,16 @@ func TestCommandRunSuccessNoBenchmarkAndErrors(t *testing.T) {
 		require.Contains(t, runner.calls[6].Args, "-alloc_space")
 	})
 
-	t.Run("no benchmark", func(t *testing.T) {
+	t.Run("no benchmark skips the memory pass", func(t *testing.T) {
 		t.Parallel()
 
 		runner := newFakeRunner()
 		runner.outputs = noBenchmarkOutputs()
 
-		var out strings.Builder
-
-		err := newCommand(t, runner).Run([]string{testPkgArg}, &out)
+		err := newCommand(t, runner).Run([]string{testPkgArg}, &strings.Builder{})
 		require.NoError(t, err)
-		require.Contains(t, out.String(), "No benchmark workload ran")
-		require.Len(t, runner.calls, noBenchmarkCallCount)
+		require.Len(t, runner.calls, noBenchmarkCallCount,
+			"profiling a second time would cost a run with nothing to measure")
 	})
 
 	t.Run("pprof error", func(t *testing.T) {

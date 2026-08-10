@@ -18,12 +18,16 @@ const (
 	fastCaveat = "CPU shares were measured with allocation profiling enabled (--fast), " +
 		"so treat the CPU ranking as approximate."
 
-	caveatNoBenchmark = "No benchmark workload ran. Add BenchmarkXxx or pass --bench. See: verdict help bootstrap."
+	// The empty-report caveats carry advice only. The summary line already
+	// states what happened, so repeating it here would print it twice.
+	caveatNoBenchmark = "Add a BenchmarkXxx function or pass --bench so the workload covers the code " +
+		"you want to inspect. See: verdict help bootstrap."
 
 	caveatNoBenchmarkStatic = "No benchmark workload ran, so this is a static estimate, not measured cost. " +
 		"Add a benchmark to raise accuracy. See: verdict help bootstrap."
 
-	caveatNoClearHotspot = "No clear user-code hotspot found for this benchmark workload."
+	caveatNoClearHotspot = "The cost may be spread across many functions, live in the runtime, or fall " +
+		"outside a benchmark workload this narrow."
 
 	caveatNoClearHotspotStatic = "The profiles show no clear user-code hotspot, so this is a static estimate, " +
 		"not measured cost. Widen the benchmark workload to raise accuracy. See: verdict help bootstrap."
@@ -139,9 +143,9 @@ func formatResult(result Result, format string) (string, error) {
 func formatText(result Result) string {
 	switch result.Classification {
 	case classNoBenchmark:
-		return withCaveat(result.Package+": no benchmark workload ran; add BenchmarkXxx or pass --bench.\n", result.Caveat)
+		return withCaveat(result.Package+": no benchmark workload ran.\n", result.Caveat)
 	case classNoClearHotspot:
-		return withCaveat(result.Package+": no clear user-code hotspot found for this benchmark workload.\n", result.Caveat)
+		return withCaveat(result.Package+": no clear user-code hotspot.\n", result.Caveat)
 	default:
 		return formatSuggestion(result)
 	}
