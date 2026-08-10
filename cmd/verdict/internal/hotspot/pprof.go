@@ -23,6 +23,7 @@ const (
 const (
 	bytesPerKB  = 1_024.0
 	microsPerMS = 1_000.0
+	msPerHour   = 3_600_000.0
 	msPerSecond = 1_000.0
 	nanosPerMS  = 1_000_000.0
 )
@@ -164,6 +165,8 @@ func parseByteValue(value string) (float64, bool) {
 		suffix string
 		scale  float64
 	}{
+		{suffix: "PB", scale: bytesPerKB * bytesPerKB * bytesPerKB * bytesPerKB * bytesPerKB},
+		{suffix: "TB", scale: bytesPerKB * bytesPerKB * bytesPerKB * bytesPerKB},
 		{suffix: "GB", scale: bytesPerKB * bytesPerKB * bytesPerKB},
 		{suffix: "MB", scale: bytesPerKB * bytesPerKB},
 		{suffix: "kB", scale: bytesPerKB},
@@ -179,6 +182,7 @@ func parseCPUValue(value string) (float64, bool) {
 		suffix string
 		scale  float64
 	}{
+		{suffix: "hrs", scale: msPerHour},
 		{suffix: "ns", scale: 1.0 / nanosPerMS},
 		{suffix: "us", scale: 1.0 / microsPerMS},
 		{suffix: "µs", scale: 1.0 / microsPerMS},
@@ -210,15 +214,20 @@ func parseTop(output []byte, kind profileKind) ([]pprofRow, error) {
 
 	lines := strings.Split(string(output), "\n")
 	rows := make([]pprofRow, 0)
+	hasTopHeader := false
 
 	for _, line := range lines {
+		if strings.Join(strings.Fields(line), " ") == "flat flat% sum% cum cum%" {
+			hasTopHeader = true
+		}
+
 		row, ok := parseTopLine(line, kind)
 		if ok {
 			rows = append(rows, row)
 		}
 	}
 
-	if len(rows) == 0 {
+	if len(rows) == 0 && !hasTopHeader {
 		return nil, errNoPprofRows
 	}
 

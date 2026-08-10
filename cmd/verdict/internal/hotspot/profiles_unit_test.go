@@ -71,6 +71,36 @@ func TestParseTopParsesObjectCountsAndRetainedBytes(t *testing.T) {
 	require.InDelta(t, 5*bytesPerKB*bytesPerKB, retained[0].Cum, 0.01)
 }
 
+func TestParseTopAcceptsAValidEmptyProfile(t *testing.T) {
+	t.Parallel()
+
+	output := []byte(`Showing nodes accounting for 0, 0% of 0 total
+      flat  flat%   sum%        cum   cum%
+`)
+
+	for _, kind := range []profileKind{profileCPU, profileAlloc, profileAllocObjects, profileInuse} {
+		rows, err := parseTop(output, kind)
+		require.NoError(t, err)
+		require.Empty(t, rows)
+	}
+}
+
+func TestParseTopSupportsAllPprofUnitRanges(t *testing.T) {
+	t.Parallel()
+
+	cpuRows, err := parseTop([]byte(topOutput(testWorkFunc, "1hrs", "50.00%", "2hrs", "100.00%")), profileCPU)
+	require.NoError(t, err)
+	require.Len(t, cpuRows, 1)
+	require.InDelta(t, 3_600_000.0, cpuRows[0].Flat, 0.001)
+	require.InDelta(t, 7_200_000.0, cpuRows[0].Cum, 0.001)
+
+	byteRows, err := parseTop([]byte(topOutput(testAllocFunc, "1TB", "50.00%", "2PB", "100.00%")), profileAlloc)
+	require.NoError(t, err)
+	require.Len(t, byteRows, 1)
+	require.InDelta(t, float64(uint64(1)<<40), byteRows[0].Flat, 0.001)
+	require.InDelta(t, float64(uint64(2)<<50), byteRows[0].Cum, 0.001)
+}
+
 func TestReadProfilesCollectsEverySignal(t *testing.T) {
 	t.Parallel()
 
@@ -161,6 +191,23 @@ func TestCommandRunRejectsAnInconsistentMemoryPass(t *testing.T) {
 	require.ErrorIs(t, err, errInconsistentPass,
 		"memory samples from a run without the workload would misreport the benchmark")
 	require.ErrorContains(t, err, "--fast")
+}
+
+func TestCommandRunRejectsPartiallyDifferentBenchmarkSets(t *testing.T) {
+	t.Parallel()
+
+	runner := newFakeRunner()
+	runner.outputs = []fakeOutput{
+		{out: goListJSON(testImportPath, testPkgDir), err: nil},
+		{out: goListDepsJSON(), err: nil},
+		{out: []byte("compiled"), err: nil},
+		{out: []byte("BenchmarkAlfa-10 1 100 ns/op\nBenchmarkBeta-10 1 100 ns/op\nPASS\n"), err: nil},
+		{out: []byte("BenchmarkAlfa-10 1 100 ns/op\nPASS\n"), err: nil},
+	}
+
+	err := newCommand(t, runner).Run([]string{testPkgArg}, &strings.Builder{})
+	require.ErrorIs(t, err, errInconsistentPass,
+		"profiles from different benchmark sets must never be fused")
 }
 
 func TestHelpTextDocumentsFast(t *testing.T) {

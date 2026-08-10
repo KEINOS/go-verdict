@@ -14,9 +14,9 @@ const (
 	sampleImportPath = "example.com/project/sample"
 	sampleSimple     = sampleImportPath + ".Simple"
 	samplePointer    = sampleImportPath + ".(*Worker).Run"
-	sampleValue      = sampleImportPath + ".(Worker).Name"
+	sampleValue      = sampleImportPath + ".Worker.Name"
 	sampleGeneric    = sampleImportPath + ".Map"
-	sampleBoxed      = sampleImportPath + ".(Box).Get"
+	sampleBoxed      = sampleImportPath + ".Box.Get"
 	sampleLiteral    = sampleImportPath + ".Handler"
 )
 
@@ -65,7 +65,7 @@ func TestAnalyzeSortsBySymbol(t *testing.T) {
 
 	stats, err := Analyze([]Package{samplePackage()})
 	require.NoError(t, err)
-	require.Len(t, stats, 7)
+	require.Len(t, stats, 8)
 	require.Equal(t, samplePointer, stats[0].Symbol, "symbols are sorted for a stable report")
 	require.True(t, slices.IsSortedFunc(stats, func(left Stat, right Stat) int {
 		return strings.Compare(left.Symbol, right.Symbol)
@@ -124,15 +124,22 @@ func analyzeSample(t *testing.T) map[string]Stat {
 func TestAnalyzeNamesAMultiParameterGenericReceiver(t *testing.T) {
 	t.Parallel()
 
-	require.Contains(t, analyzeSample(t), sampleImportPath+".(Pair).Key")
+	require.Contains(t, analyzeSample(t), sampleImportPath+".Pair.Key")
 }
 
-func TestAnalyzeKeepsTheHighestScoreForARepeatedSymbol(t *testing.T) {
+func TestAnalyzeKeepsInitDeclarationsSeparate(t *testing.T) {
 	t.Parallel()
 
-	stat, ok := analyzeSample(t)[sampleImportPath+".init"]
-	require.True(t, ok, "a package may declare init more than once")
-	require.Equal(t, 2, stat.Cyclomatic, "the branchier declaration decides the score")
+	stats := analyzeSample(t)
+	first, firstOK := stats[sampleImportPath+".init.0"]
+	second, secondOK := stats[sampleImportPath+".init.1"]
+
+	require.True(t, firstOK, "each init declaration has its own compiler symbol")
+	require.True(t, secondOK, "each init declaration has its own compiler symbol")
+	require.Equal(t, 98, first.Line)
+	require.Equal(t, 1, first.Cyclomatic)
+	require.Equal(t, 102, second.Line)
+	require.Equal(t, 2, second.Cyclomatic)
 }
 
 func TestReceiverNameFallsBackForAnUnnameableType(t *testing.T) {

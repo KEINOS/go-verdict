@@ -72,7 +72,8 @@ func Analyze(packages []Package) ([]Stat, error) {
 
 func analyzePackage(pkg Package) ([]Stat, error) {
 	fileSet := token.NewFileSet()
-	merged := make(map[string]Stat, len(pkg.Files))
+	stats := make([]Stat, 0, len(pkg.Files))
+	initIndex := 0
 
 	for _, name := range pkg.Files {
 		file, err := parser.ParseFile(fileSet, filepath.Join(pkg.Dir, name), nil, parser.ParseComments)
@@ -86,22 +87,23 @@ func analyzePackage(pkg Package) ([]Stat, error) {
 				continue
 			}
 
-			mergeStat(merged, statOf(pkg.ImportPath, function, fileSet.Position(function.Pos())))
-		}
-	}
+			name := funcName(function)
+			if name == "init" {
+				name = fmt.Sprintf("init.%d", initIndex)
+				initIndex++
+			}
 
-	stats := make([]Stat, 0, len(merged))
-	for _, stat := range merged {
-		stats = append(stats, stat)
+			stats = append(stats, statOf(pkg.ImportPath, name, function, fileSet.Position(function.Pos())))
+		}
 	}
 
 	return stats, nil
 }
 
-func statOf(importPath string, function *ast.FuncDecl, pos token.Position) Stat {
+func statOf(importPath string, name string, function *ast.FuncDecl, pos token.Position) Stat {
 	return Stat{
 		ImportPath: importPath,
-		Symbol:     importPath + "." + funcName(function),
+		Symbol:     importPath + "." + name,
 		File:       filepath.Base(pos.Filename),
 		Line:       pos.Line,
 		Cyclomatic: gocyclo.Complexity(function),
@@ -109,30 +111,19 @@ func statOf(importPath string, function *ast.FuncDecl, pos token.Position) Stat 
 	}
 }
 
-// mergeStat folds one declaration into the symbol it belongs to. A symbol that
-// a package declares more than once, such as init, keeps the highest score and
-// the position first seen.
-func mergeStat(merged map[string]Stat, stat Stat) {
-	current, ok := merged[stat.Symbol]
-	if !ok {
-		merged[stat.Symbol] = stat
-
-		return
-	}
-
-	current.Cyclomatic = max(current.Cyclomatic, stat.Cyclomatic)
-	current.Cognitive = max(current.Cognitive, stat.Cognitive)
-	merged[stat.Symbol] = current
-}
-
 // funcName renders a declaration the way pprof names it: "(*T).Name" for a
-// pointer method, "(T).Name" for a value method, and "Name" otherwise.
+// pointer method, "T.Name" for a value method, and "Name" otherwise.
 func funcName(function *ast.FuncDecl) string {
 	if function.Recv == nil || function.Recv.NumFields() == 0 {
 		return function.Name.Name
 	}
 
-	return "(" + receiverName(function.Recv.List[0].Type) + ")." + function.Name.Name
+	receiver := receiverName(function.Recv.List[0].Type)
+	if strings.HasPrefix(receiver, "*") {
+		return "(" + receiver + ")." + function.Name.Name
+	}
+
+	return receiver + "." + function.Name.Name
 }
 
 // receiverName renders a receiver type. A generic receiver drops its type

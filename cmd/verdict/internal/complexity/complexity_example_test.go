@@ -24,10 +24,11 @@ func ExampleAnalyze() {
 
 	// Output:
 	// example.com/project/sample.(*Worker).Run
-	// example.com/project/sample.(Box).Get
-	// example.com/project/sample.(Pair).Key
-	// example.com/project/sample.(Worker).Name
+	// example.com/project/sample.Box.Get
 	// example.com/project/sample.Map
+	// example.com/project/sample.Pair.Key
 	// example.com/project/sample.Simple
-	// example.com/project/sample.init
+	// example.com/project/sample.Worker.Name
+	// example.com/project/sample.init.0
+	// example.com/project/sample.init.1
 }

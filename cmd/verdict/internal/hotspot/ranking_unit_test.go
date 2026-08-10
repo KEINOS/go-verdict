@@ -185,6 +185,62 @@ func TestStaticKeyJoinsGenericAndClosureRows(t *testing.T) {
 	require.Equal(t, testSampleFile, got.File)
 }
 
+func TestClassifyDoesNotTreatDeclaredFuncNumberAsClosure(t *testing.T) {
+	t.Parallel()
+
+	declared := testImportPath + ".func1"
+	got := classify(testResult(), profileSet{
+		CPU:          map[string]pprofRow{declared: row(declared, 40, 60)},
+		Alloc:        map[string]pprofRow{},
+		AllocObjects: map[string]pprofRow{},
+		Inuse:        map[string]pprofRow{},
+	}, map[string]complexity.Stat{
+		declared: statOf(declared, 24, 31),
+	}, defaultTop)
+
+	require.Equal(t, declared, got.Function)
+	require.Equal(t, classHotAndComplex, got.Classification)
+	require.Empty(t, got.Candidates, "one declared function must not become a measured and a static candidate")
+}
+
+func TestClassifyJoinsValueMethodPointerWrapper(t *testing.T) {
+	t.Parallel()
+
+	declared := testImportPath + ".Worker.Name"
+	wrapper := testImportPath + ".(*Worker).Name"
+	got := classify(testResult(), profileSet{
+		CPU:          map[string]pprofRow{wrapper: row(wrapper, 40, 60)},
+		Alloc:        map[string]pprofRow{},
+		AllocObjects: map[string]pprofRow{},
+		Inuse:        map[string]pprofRow{},
+	}, map[string]complexity.Stat{
+		declared: statOf(declared, 24, 31),
+	}, defaultTop)
+
+	require.Equal(t, wrapper, got.Function)
+	require.Equal(t, classHotAndComplex, got.Classification)
+	require.Equal(t, testSampleFile, got.File)
+	require.Empty(t, got.Candidates)
+}
+
+func TestValueMethodKeyRejectsNonWrappers(t *testing.T) {
+	t.Parallel()
+
+	require.Empty(t, valueMethodKey(testWorkFunc))
+	require.Empty(t, valueMethodKey(testImportPath+".(*Worker"))
+	require.Equal(t, testImportPath+".Worker.Name", valueMethodKey(testImportPath+".(*Worker).Name"))
+}
+
+func TestItemForKeepsAStableDisplaySymbol(t *testing.T) {
+	t.Parallel()
+
+	items := make(map[string]*candidate)
+	itemFor(items, "canonical", "zeta")
+	got := itemFor(items, "canonical", "alfa")
+
+	require.Equal(t, "alfa", got.function)
+}
+
 func TestClassifyReportsAGenericFunctionOnce(t *testing.T) {
 	t.Parallel()
 
@@ -205,6 +261,32 @@ func TestClassifyReportsAGenericFunctionOnce(t *testing.T) {
 		require.NotEqual(t, generic, choice.Function,
 			"the instantiated and the declared symbol are the same function")
 	}
+}
+
+func TestClassifyMergesMultipleGenericInstantiations(t *testing.T) {
+	t.Parallel()
+
+	generic := testImportPath + ".Map"
+	intShape := generic + "[go.shape.int]"
+	stringShape := generic + "[go.shape.string]"
+
+	got := classify(testResult(), profileSet{
+		CPU: map[string]pprofRow{
+			intShape:    row(intShape, 20, 30),
+			stringShape: row(stringShape, 30, 40),
+		},
+		Alloc:        map[string]pprofRow{},
+		AllocObjects: map[string]pprofRow{},
+		Inuse:        map[string]pprofRow{},
+	}, map[string]complexity.Stat{
+		generic: statOf(generic, 24, 31),
+	}, defaultTop)
+
+	require.Equal(t, classHotAndComplex, got.Classification)
+	require.Equal(t, intShape, got.Function, "the display symbol is deterministic")
+	require.InDelta(t, 50.0, got.CPU.FlatPct, 0.001, "instantiation costs are combined")
+	require.InDelta(t, 40.0, got.CPU.CumPct, 0.001)
+	require.Empty(t, got.Candidates, "all instantiations point to one source function")
 }
 
 func TestClassifyOrdersDominatorsBeforeWhatTheyDominate(t *testing.T) {

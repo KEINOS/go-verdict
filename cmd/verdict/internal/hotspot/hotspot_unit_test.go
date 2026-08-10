@@ -3,6 +3,7 @@ package hotspot
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -398,6 +399,7 @@ func newCommand(t *testing.T, runner commandRunner) Command {
 	t.Helper()
 
 	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "hotspot.test"), nil, 0o600))
 
 	return Command{runner: runner, tempDir: func() (string, error) { return dir, nil }}
 }
@@ -491,6 +493,21 @@ func TestScoutReportsATempDirectoryFailure(t *testing.T) {
 
 	err := command.Run([]string{testPkgArg}, &strings.Builder{})
 	require.ErrorIs(t, err, errFakeRun)
+}
+
+func TestCompileBenchmarkReportsBinaryInspectionFailure(t *testing.T) {
+	t.Parallel()
+
+	parentFile := filepath.Join(t.TempDir(), "not-a-directory")
+	require.NoError(t, os.WriteFile(parentFile, nil, 0o600))
+
+	runner := newFakeRunner()
+	runner.outputs = []fakeOutput{{out: []byte("compiled"), err: nil}}
+
+	command := Command{runner: runner, tempDir: nil}
+	compiled, err := command.compileBenchmark(filepath.Join(parentFile, "hotspot.test"), testPkgArg)
+	require.False(t, compiled)
+	require.ErrorContains(t, err, "checking benchmark binary")
 }
 
 func TestExecRunnerRunsAndReportsRealProcesses(t *testing.T) {

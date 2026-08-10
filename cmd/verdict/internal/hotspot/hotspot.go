@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,7 +42,7 @@ const (
 )
 
 var (
-	benchmarkRowPattern = regexp.MustCompile(`(?m)^Benchmark\S+\s+\d+`)
+	benchmarkRowPattern = regexp.MustCompile(`(?m)^(Benchmark\S+)\s+\d+`)
 	benchtimeCount      = regexp.MustCompile(`^[1-9][0-9]*x$`)
 
 	errInvalidBenchtime = errors.New("benchtime must be a Go benchmark duration or iteration count")
@@ -157,13 +158,22 @@ func (command Command) withDefaults() Command {
 	return command
 }
 
-func (command Command) compileBenchmark(binaryPath string, pkg string) error {
+func (command Command) compileBenchmark(binaryPath string, pkg string) (bool, error) {
 	_, err := command.runner.Run(invocation{Dir: "", Name: "go", Args: []string{"test", "-c", "-o", binaryPath, pkg}})
 	if err != nil {
-		return fmt.Errorf("compiling benchmark binary: %w", err)
+		return false, fmt.Errorf("compiling benchmark binary: %w", err)
 	}
 
-	return nil
+	_, err = os.Stat(binaryPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("checking benchmark binary: %w", err)
+	}
+
+	return true, nil
 }
 
 // runBenchmark runs the compiled benchmark binary once. An empty cpuPath or
@@ -215,7 +225,7 @@ func (command Command) runProfilingPasses(
 			return false, err
 		}
 
-		return benchmarkRowPattern.Match(output), nil
+		return len(benchmarkRows(output)) > 0, nil
 	}
 
 	output, err := command.runBenchmark(pkgDir, binaryPath, cpuPath, "", opts)
@@ -223,7 +233,8 @@ func (command Command) runProfilingPasses(
 		return false, err
 	}
 
-	if !benchmarkRowPattern.Match(output) {
+	cpuBenchmarks := benchmarkRows(output)
+	if len(cpuBenchmarks) == 0 {
 		return false, nil
 	}
 
@@ -235,7 +246,8 @@ func (command Command) runProfilingPasses(
 	// The two passes must measure the same workload. Without this check a
 	// benchmark that silently skips under allocation profiling would have its
 	// setup and runtime allocations reported as the workload's own.
-	if !benchmarkRowPattern.Match(output) {
+	memoryBenchmarks := benchmarkRows(output)
+	if !maps.Equal(cpuBenchmarks, memoryBenchmarks) {
 		return false, fmt.Errorf("%w: try --fast to profile in one pass", errInconsistentPass)
 	}
 
@@ -339,9 +351,13 @@ func (command Command) scoutInTempDir(
 	cpuPath := filepath.Join(tmpDir, "cpu.out")
 	memPath := filepath.Join(tmpDir, "mem.out")
 
-	err := command.compileBenchmark(binaryPath, opts.pkg)
+	compiled, err := command.compileBenchmark(binaryPath, opts.pkg)
 	if err != nil {
 		return Result{}, err
+	}
+
+	if !compiled {
+		return withoutBenchmark(result, static, opts.top), nil
 	}
 
 	benchmarked, err := command.runProfilingPasses(pkgInfo.Dir, binaryPath, cpuPath, memPath, opts)
@@ -569,6 +585,16 @@ func validBenchtime(value string) bool {
 	duration, err := time.ParseDuration(value)
 
 	return err == nil && duration > 0
+}
+
+func benchmarkRows(output []byte) map[string]int {
+	rows := make(map[string]int)
+
+	for _, match := range benchmarkRowPattern.FindAllSubmatch(output, -1) {
+		rows[string(match[1])]++
+	}
+
+	return rows
 }
 
 func writeText(output io.Writer, text string) error {

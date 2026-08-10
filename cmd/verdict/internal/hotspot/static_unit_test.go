@@ -217,6 +217,17 @@ func TestCommandRunFallsBackToComplexityWithoutBenchmark(t *testing.T) {
 	require.Contains(t, text, "verdict help bootstrap")
 }
 
+func TestCommandRunFallsBackWhenPackageHasNoTestFiles(t *testing.T) {
+	t.Parallel()
+
+	var out strings.Builder
+
+	err := New().Run([]string{"./testdata/sample"}, &out)
+	require.NoError(t, err)
+	require.Contains(t, out.String(), classComplexityHotspot)
+	require.Contains(t, out.String(), "static estimate")
+}
+
 func TestCommandRunEnrichesHotFunctionWithComplexity(t *testing.T) {
 	t.Parallel()
 

@@ -253,10 +253,10 @@ func runnersUp(ranked []candidate, top int) []Choice {
 func buildCandidates(profiles profileSet, static map[string]complexity.Stat, importPath string) []candidate {
 	items := make(map[string]*candidate)
 
-	addRows(items, profiles.CPU, idxCPU)
-	addRows(items, profiles.Alloc, idxAllocBytes)
-	addRows(items, profiles.AllocObjects, idxAllocObjects)
-	addRows(items, profiles.Inuse, idxRetained)
+	addRows(items, profiles.CPU, idxCPU, static)
+	addRows(items, profiles.Alloc, idxAllocBytes, static)
+	addRows(items, profiles.AllocObjects, idxAllocObjects, static)
+	addRows(items, profiles.Inuse, idxRetained, static)
 	addStatic(items, static, importPath)
 
 	qualified := make([]candidate, 0, len(items))
@@ -270,21 +270,28 @@ func buildCandidates(profiles profileSet, static map[string]complexity.Stat, imp
 	return qualified
 }
 
-func addRows(items map[string]*candidate, rows map[string]pprofRow, index int) {
+func addRows(
+	items map[string]*candidate,
+	rows map[string]pprofRow,
+	index int,
+	static map[string]complexity.Stat,
+) {
 	for function, row := range rows {
-		item := itemFor(items, function)
-		item.scores[index] = profileScore(row, index)
+		key := canonicalKey(function, static)
+		item := itemFor(items, key, function)
 
 		switch index {
 		case idxCPU:
-			item.cpu = metricOf(row, unitMS)
+			item.cpu = mergeMetrics(item.cpu, metricOf(row, unitMS))
 		case idxAllocBytes:
-			item.allocBytes = metricOf(row, unitBytes)
+			item.allocBytes = mergeMetrics(item.allocBytes, metricOf(row, unitBytes))
 		case idxAllocObjects:
-			item.allocObjects = metricOf(row, unitObjects)
+			item.allocObjects = mergeMetrics(item.allocObjects, metricOf(row, unitObjects))
 		case idxRetained:
-			item.retained = metricOf(row, unitBytes)
+			item.retained = mergeMetrics(item.retained, metricOf(row, unitBytes))
 		}
+
+		item.scores[index] = profileScore(metricRow(item, index), index)
 	}
 }
 
@@ -297,10 +304,9 @@ func addStatic(items map[string]*candidate, static map[string]complexity.Stat, i
 	joined := make(map[string]struct{}, len(items))
 
 	for key, item := range items {
-		symbol := staticKey(key)
-		joined[symbol] = struct{}{}
+		joined[key] = struct{}{}
 
-		stat, ok := static[symbol]
+		stat, ok := static[key]
 		if !ok {
 			continue
 		}
@@ -317,7 +323,7 @@ func addStatic(items map[string]*candidate, static map[string]complexity.Stat, i
 			continue
 		}
 
-		applyStatic(itemFor(items, stat.Symbol), stat)
+		applyStatic(itemFor(items, stat.Symbol, stat.Symbol), stat)
 	}
 }
 
@@ -332,8 +338,8 @@ func applyStatic(item *candidate, stat complexity.Stat) {
 	item.scores[idxComplexity] = complexityScore(stat)
 }
 
-func itemFor(items map[string]*candidate, function string) *candidate {
-	item, ok := items[function]
+func itemFor(items map[string]*candidate, key string, function string) *candidate {
+	item, ok := items[key]
 	if !ok {
 		item = &candidate{
 			function:     function,
@@ -347,10 +353,85 @@ func itemFor(items map[string]*candidate, function string) *candidate {
 			scores:       [signalCount]float64{},
 			dominators:   0,
 		}
-		items[function] = item
+		items[key] = item
+	} else if function < item.function {
+		item.function = function
 	}
 
 	return item
+}
+
+func canonicalKey(function string, static map[string]complexity.Stat) string {
+	stripped := stripShapes(function)
+	if _, ok := static[stripped]; ok {
+		return stripped
+	}
+
+	if valueMethod := valueMethodKey(stripped); valueMethod != "" {
+		if _, ok := static[valueMethod]; ok {
+			return valueMethod
+		}
+	}
+
+	closure := closureSuffix.ReplaceAllString(stripped, "")
+	if closure != stripped {
+		if _, ok := static[closure]; ok {
+			return closure
+		}
+	}
+
+	return stripped
+}
+
+func valueMethodKey(function string) string {
+	start := strings.LastIndex(function, ".(*")
+	if start < 0 {
+		return ""
+	}
+
+	receiverStart := start + len(".(*")
+
+	closeOffset := strings.Index(function[receiverStart:], ").")
+	if closeOffset < 0 {
+		return ""
+	}
+
+	closeIndex := receiverStart + closeOffset
+	receiver := function[receiverStart:closeIndex]
+	method := function[closeIndex+len(")."):]
+
+	return function[:start] + "." + receiver + "." + method
+}
+
+func mergeMetrics(left Metric, right Metric) Metric {
+	return Metric{
+		Unit:    right.Unit,
+		Flat:    left.Flat + right.Flat,
+		FlatPct: left.FlatPct + right.FlatPct,
+		Cum:     max(left.Cum, right.Cum),
+		CumPct:  max(left.CumPct, right.CumPct),
+	}
+}
+
+func metricRow(item *candidate, index int) pprofRow {
+	metric := item.cpu
+
+	switch index {
+	case idxAllocBytes:
+		metric = item.allocBytes
+	case idxAllocObjects:
+		metric = item.allocObjects
+	case idxRetained:
+		metric = item.retained
+	}
+
+	return pprofRow{
+		Function: item.function,
+		Flat:     metric.Flat,
+		FlatPct:  metric.FlatPct,
+		Cum:      metric.Cum,
+		CumPct:   metric.CumPct,
+	}
 }
 
 // rankCandidates orders candidates by how many other candidates dominate them,
