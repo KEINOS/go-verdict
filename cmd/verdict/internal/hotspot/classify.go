@@ -208,6 +208,18 @@ func report(base Result, profiles profileSet, static map[string]complexity.Stat,
 	}
 
 	primary := ranked[0]
+	base = withPrimary(base, primary)
+	base.Candidates = runnersUp(ranked, cfg.top)
+
+	if !primary.measured() {
+		base.Caveat = appendCaveat(base.Caveat, cfg.staticCaveat)
+	}
+
+	return base
+}
+
+// withPrimary copies the suggested candidate into the top level of the report.
+func withPrimary(base Result, primary candidate) Result {
 	base.Classification = primary.classification()
 	base.Function = primary.function
 	base.File = primary.file
@@ -218,11 +230,6 @@ func report(base Result, profiles profileSet, static map[string]complexity.Stat,
 	base.AllocObjects = primary.allocObjects
 	base.Retained = primary.retained
 	base.Complexity = primary.complexity
-	base.Candidates = runnersUp(ranked, cfg.top)
-
-	if !primary.measured() {
-		base.Caveat = appendCaveat(base.Caveat, cfg.staticCaveat)
-	}
 
 	return base
 }

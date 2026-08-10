@@ -92,19 +92,19 @@ func TestStaticComplexityReportsFailures(t *testing.T) {
 	runner := newFakeRunner()
 	runner.outputs = []fakeOutput{{out: nil, err: errFakeRun}}
 
-	_, err := (Command{runner: runner}).resolveModulePackages(testPkgArg, testModulePath)
+	_, err := newCommand(t, runner).resolveModulePackages(testPkgArg, testModulePath)
 	require.ErrorContains(t, err, "listing module packages")
 
 	runner = newFakeRunner()
 	runner.outputs = []fakeOutput{{out: []byte("{"), err: nil}}
 
-	_, err = (Command{runner: runner}).resolveModulePackages(testPkgArg, testModulePath)
+	_, err = newCommand(t, runner).resolveModulePackages(testPkgArg, testModulePath)
 	require.ErrorContains(t, err, "decoding go list output")
 
 	runner = newFakeRunner()
 	runner.outputs = []fakeOutput{{out: goListBrokenJSON(), err: nil}}
 
-	_, err = (Command{runner: runner}).staticComplexity(testPkgArg, samplePackageInfo())
+	_, err = newCommand(t, runner).staticComplexity(testPkgArg, samplePackageInfo())
 	require.ErrorContains(t, err, "analyzing complexity")
 }
 
@@ -164,7 +164,7 @@ func TestResolveModulePackagesKeepsModuleLocalPackages(t *testing.T) {
 	runner := newFakeRunner()
 	runner.outputs = []fakeOutput{{out: goListDepsJSON(), err: nil}}
 
-	got, err := (Command{runner: runner}).resolveModulePackages(testPkgArg, testModulePath)
+	got, err := newCommand(t, runner).resolveModulePackages(testPkgArg, testModulePath)
 	require.NoError(t, err)
 	require.Len(t, got, 1, "standard library and other modules are not user code")
 	require.Equal(t, testImportPath, got[0].ImportPath)
@@ -178,7 +178,7 @@ func TestResolveModulePackagesWithoutModulePath(t *testing.T) {
 	runner := newFakeRunner()
 	runner.outputs = []fakeOutput{{out: goListDepsJSON(), err: nil}}
 
-	got, err := (Command{runner: runner}).resolveModulePackages(testPkgArg, "")
+	got, err := newCommand(t, runner).resolveModulePackages(testPkgArg, "")
 	require.NoError(t, err)
 	require.Empty(t, got, "without a module path there is no user-code boundary to trust")
 	require.Empty(t, runner.calls, "no package listing is needed")
@@ -190,7 +190,7 @@ func TestResolveModulePackagesIncludesCgoSources(t *testing.T) {
 	runner := newFakeRunner()
 	runner.outputs = []fakeOutput{{out: goListCgoJSON(), err: nil}}
 
-	got, err := (Command{runner: runner}).resolveModulePackages(testPkgArg, testModulePath)
+	got, err := newCommand(t, runner).resolveModulePackages(testPkgArg, testModulePath)
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	require.Equal(t, []string{"sample.go", "bridge.go"}, got[0].Files,
@@ -205,7 +205,7 @@ func TestCommandRunFallsBackToComplexityWithoutBenchmark(t *testing.T) {
 
 	var out strings.Builder
 
-	err := (Command{runner: runner}).Run([]string{testPkgArg}, &out)
+	err := newCommand(t, runner).Run([]string{testPkgArg}, &out)
 	require.NoError(t, err)
 	require.Len(t, runner.calls, noBenchmarkCallCount, "the memory pass is skipped when no benchmark ran")
 
@@ -225,7 +225,7 @@ func TestCommandRunEnrichesHotFunctionWithComplexity(t *testing.T) {
 
 	var out strings.Builder
 
-	err := (Command{runner: runner}).Run([]string{testFlagFormat, formatJSON, testPkgArg}, &out)
+	err := newCommand(t, runner).Run([]string{testFlagFormat, formatJSON, testPkgArg}, &out)
 	require.NoError(t, err)
 
 	text := out.String()
@@ -260,4 +260,83 @@ func noBenchmarkOutputs() []fakeOutput {
 		{out: []byte("compiled"), err: nil},
 		{out: []byte("PASS\n"), err: nil},
 	}
+}
+
+func TestResolvePackageRejectsAnEmptyListing(t *testing.T) {
+	t.Parallel()
+
+	runner := newFakeRunner()
+	runner.outputs = []fakeOutput{{out: []byte(""), err: nil}}
+
+	_, err := newCommand(t, runner).resolvePackage(testPkgArg)
+	require.ErrorIs(t, err, errMissingPackage)
+}
+
+func TestModulePathIsEmptyOutsideAModule(t *testing.T) {
+	t.Parallel()
+
+	outside := packageInfo{
+		ImportPath: testImportPath,
+		Dir:        testSampleDir,
+		Module:     nil,
+		GoFiles:    nil,
+		CgoFiles:   nil,
+	}
+	require.Empty(t, outside.modulePath())
+	require.Equal(t, testModulePath, samplePackageInfo().modulePath())
+}
+
+func TestCommandRunReportsAStaticAnalysisFailure(t *testing.T) {
+	t.Parallel()
+
+	runner := newFakeRunner()
+	runner.outputs = []fakeOutput{
+		{out: goListJSON(testImportPath, testSampleDir), err: nil},
+		{out: goListBrokenJSON(), err: nil},
+	}
+
+	err := newCommand(t, runner).Run([]string{testPkgArg}, &strings.Builder{})
+	require.ErrorContains(t, err, "analyzing complexity")
+}
+
+func TestIsBenchmarkFunctionNeedsAQualifiedName(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, isBenchmarkFunction(testImportPath+".BenchmarkWork"))
+	require.False(t, isBenchmarkFunction("BenchmarkWork"), "an unqualified name is not a profile symbol")
+	require.False(t, isBenchmarkFunction(testImportPath+"."), "a trailing dot has no function name")
+	require.False(t, isBenchmarkFunction(testWorkFunc))
+}
+
+func TestResolvePackageReportsMalformedJSON(t *testing.T) {
+	t.Parallel()
+
+	runner := newFakeRunner()
+	runner.outputs = []fakeOutput{{out: []byte("{"), err: nil}}
+
+	_, err := newCommand(t, runner).resolvePackage(testPkgArg)
+	require.ErrorContains(t, err, "decoding go list output")
+}
+
+func TestCommandRunReportsAModulePackageListingFailure(t *testing.T) {
+	t.Parallel()
+
+	runner := newFakeRunner()
+	runner.outputs = []fakeOutput{
+		{out: goListJSON(testImportPath, testSampleDir), err: nil},
+		{out: nil, err: errFakeRun},
+	}
+
+	err := newCommand(t, runner).Run([]string{testPkgArg}, &strings.Builder{})
+	require.ErrorContains(t, err, "listing module packages")
+}
+
+func TestStaticKeyStripsNestedGenericShapes(t *testing.T) {
+	t.Parallel()
+
+	require.Equal(t, testWorkFunc, staticKey(testWorkFunc+"[go.shape.[]int]"),
+		"a shape may itself be a composite type")
+	require.Equal(t, testImportPath+".(*Box).Get",
+		staticKey(testImportPath+".(*Box[go.shape.map[string]int]).Get"))
+	require.Equal(t, testWorkFunc, staticKey(testWorkFunc+"[go.shape.[]int].func1"))
 }

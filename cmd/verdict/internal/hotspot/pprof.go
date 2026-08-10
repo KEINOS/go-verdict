@@ -9,6 +9,17 @@ import (
 	"strings"
 )
 
+// Column positions in one "go tool pprof -top" row.
+const (
+	idxFlat = iota
+	idxFlatPct
+	idxSumPct
+	idxCum
+	idxCumPct
+	idxFunction
+	topLineFields
+)
+
 const (
 	bytesPerKB  = 1_024.0
 	microsPerMS = 1_000.0
@@ -19,7 +30,6 @@ const (
 var (
 	inlineMarker  = regexp.MustCompile(`\s+\(inline\)$`)
 	spacePattern  = regexp.MustCompile(`\s+`)
-	shapeSuffix   = regexp.MustCompile(`\[[^\]]*\]`)
 	closureSuffix = regexp.MustCompile(`\.func\d+(\.\d+)*$`)
 
 	errNoPprofRows        = errors.New("pprof top output has no rows")
@@ -104,7 +114,29 @@ func normalizeSymbol(symbol string) string {
 // generic instantiation loses its shape suffix, and a closure is attributed to
 // the function that declares it.
 func staticKey(function string) string {
-	return closureSuffix.ReplaceAllString(shapeSuffix.ReplaceAllString(function, ""), "")
+	return closureSuffix.ReplaceAllString(stripShapes(function), "")
+}
+
+// stripShapes removes every bracketed generic instantiation. Brackets nest,
+// because a shape can itself be a composite type such as go.shape.[]int, so
+// this counts depth instead of matching a bracket pair with a pattern.
+func stripShapes(symbol string) string {
+	var builder strings.Builder
+
+	depth := 0
+
+	for _, char := range symbol {
+		switch {
+		case char == '[':
+			depth++
+		case char == ']' && depth > 0:
+			depth--
+		case depth == 0:
+			builder.WriteRune(char)
+		}
+	}
+
+	return builder.String()
 }
 
 // emptyProfiles is the profile set of a run that produced no measurements.
@@ -193,39 +225,35 @@ func parseTop(output []byte, kind profileKind) ([]pprofRow, error) {
 	return rows, nil
 }
 
+// parseTopLine reads one "go tool pprof -top" row. The layout is
+// "flat flat% sum% cum cum% function", so a row needs six fields and the two
+// percent columns must carry a percent sign.
 func parseTopLine(line string, kind profileKind) (pprofRow, bool) {
 	fields := strings.Fields(line)
-	if len(fields) < 6 || !strings.HasSuffix(fields[1], "%") || !strings.HasSuffix(fields[4], "%") {
+	if len(fields) < topLineFields || !isPercent(fields[idxFlatPct]) || !isPercent(fields[idxCumPct]) {
 		return zeroPprofRow(), false
 	}
 
-	flat, ok := parseValue(fields[0], kind)
-	if !ok {
-		return zeroPprofRow(), false
-	}
+	flat, flatOK := parseValue(fields[idxFlat], kind)
+	flatPct, flatPctOK := parsePercent(fields[idxFlatPct])
+	cum, cumOK := parseValue(fields[idxCum], kind)
+	cumPct, cumPctOK := parsePercent(fields[idxCumPct])
 
-	flatPct, ok := parsePercent(fields[1])
-	if !ok {
-		return zeroPprofRow(), false
-	}
-
-	cum, ok := parseValue(fields[3], kind)
-	if !ok {
-		return zeroPprofRow(), false
-	}
-
-	cumPct, ok := parsePercent(fields[4])
-	if !ok {
+	if !flatOK || !flatPctOK || !cumOK || !cumPctOK {
 		return zeroPprofRow(), false
 	}
 
 	return pprofRow{
-		Function: normalizeSymbol(strings.Join(fields[5:], " ")),
+		Function: normalizeSymbol(strings.Join(fields[idxFunction:], " ")),
 		Flat:     flat,
 		FlatPct:  flatPct,
 		Cum:      cum,
 		CumPct:   cumPct,
 	}, true
+}
+
+func isPercent(field string) bool {
+	return strings.HasSuffix(field, "%")
 }
 
 func parseUnitValue(value string, units []struct {

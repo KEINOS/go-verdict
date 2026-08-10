@@ -54,14 +54,20 @@ var (
 	errNilOutput        = errors.New("writing output: nil output writer")
 )
 
-// Command runs the hotspot Scout command.
+// Command runs the hotspot Scout command. Both dependencies are injected so
+// the command can be exercised without spawning processes or touching disk.
 type Command struct {
-	runner commandRunner
+	runner  commandRunner
+	tempDir tempDirMaker
 }
 
 type commandRunner interface {
 	Run(command invocation) ([]byte, error)
 }
+
+// tempDirMaker creates the scratch directory that holds the compiled test
+// binary and the profile files.
+type tempDirMaker func() (string, error)
 
 type execRunner struct{}
 
@@ -97,7 +103,16 @@ type packageInfo struct {
 
 // New returns a hotspot command with the default process runner.
 func New() Command {
-	return Command{runner: execRunner{}}
+	return Command{runner: execRunner{}, tempDir: osTempDir}
+}
+
+func osTempDir() (string, error) {
+	dir, err := os.MkdirTemp("", "verdict-hotspot-*")
+	if err != nil {
+		return "", fmt.Errorf("creating hotspot temp dir: %w", err)
+	}
+
+	return dir, nil
 }
 
 // Run executes the hotspot Scout command with the provided args.
@@ -115,11 +130,7 @@ func (command Command) Run(args []string, output io.Writer) error {
 		return err
 	}
 
-	if command.runner == nil {
-		command.runner = execRunner{}
-	}
-
-	result, err := command.scout(opts)
+	result, err := command.withDefaults().scout(opts)
 	if err != nil {
 		return err
 	}
@@ -130,6 +141,20 @@ func (command Command) Run(args []string, output io.Writer) error {
 	}
 
 	return writeText(output, text)
+}
+
+// withDefaults fills in the dependencies of a zero-value Command, so callers
+// can construct one without New.
+func (command Command) withDefaults() Command {
+	if command.runner == nil {
+		command.runner = execRunner{}
+	}
+
+	if command.tempDir == nil {
+		command.tempDir = osTempDir
+	}
+
+	return command
 }
 
 func (command Command) compileBenchmark(binaryPath string, pkg string) error {
@@ -293,9 +318,9 @@ func (command Command) scout(opts options) (Result, error) {
 		return Result{}, err
 	}
 
-	tmpDir, err := os.MkdirTemp("", "verdict-hotspot-*")
+	tmpDir, err := command.tempDir()
 	if err != nil {
-		return Result{}, fmt.Errorf("creating hotspot temp dir: %w", err)
+		return Result{}, err
 	}
 
 	defer func() { _ = os.RemoveAll(tmpDir) }()

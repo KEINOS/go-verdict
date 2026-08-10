@@ -2,6 +2,7 @@ package hotspot
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -220,7 +221,7 @@ func TestCommandRunSuccessNoBenchmarkAndErrors(t *testing.T) {
 
 		var out strings.Builder
 
-		err := (Command{runner: runner}).Run([]string{"--bench", "BenchmarkWork", testPkgArg}, &out)
+		err := newCommand(t, runner).Run([]string{"--bench", "BenchmarkWork", testPkgArg}, &out)
 		require.NoError(t, err)
 		require.Contains(t, out.String(), classHotAndComplex, "Work is hot in CPU and allocations and is complex")
 		require.Len(t, runner.calls, fullRunCallCount)
@@ -238,7 +239,7 @@ func TestCommandRunSuccessNoBenchmarkAndErrors(t *testing.T) {
 
 		var out strings.Builder
 
-		err := (Command{runner: runner}).Run([]string{testPkgArg}, &out)
+		err := newCommand(t, runner).Run([]string{testPkgArg}, &out)
 		require.NoError(t, err)
 		require.Contains(t, out.String(), "No benchmark workload ran")
 		require.Len(t, runner.calls, noBenchmarkCallCount)
@@ -251,7 +252,7 @@ func TestCommandRunSuccessNoBenchmarkAndErrors(t *testing.T) {
 
 		runner.outputs = append(benchmarkRunOutputs(), fakeOutput{out: nil, err: errFakeRun})
 
-		err := (Command{runner: runner}).Run([]string{testPkgArg}, &strings.Builder{})
+		err := newCommand(t, runner).Run([]string{testPkgArg}, &strings.Builder{})
 		require.ErrorContains(t, err, "reading CPU profile")
 	})
 }
@@ -261,20 +262,20 @@ func TestCommandRunInputOutputErrors(t *testing.T) {
 
 	var help strings.Builder
 
-	err := (Command{runner: newFakeRunner()}).Run([]string{"--help"}, &help)
+	err := newCommand(t, newFakeRunner()).Run([]string{"--help"}, &help)
 	require.NoError(t, err)
 	require.Contains(t, help.String(), "Usage:\n  verdict hotspot")
 
-	err = (Command{runner: newFakeRunner()}).Run([]string{testPkgArg}, nil)
+	err = newCommand(t, newFakeRunner()).Run([]string{testPkgArg}, nil)
 	require.ErrorIs(t, err, errNilOutput)
 
-	err = (Command{runner: newFakeRunner()}).Run([]string{"--bad"}, &strings.Builder{})
+	err = newCommand(t, newFakeRunner()).Run([]string{"--bad"}, &strings.Builder{})
 	require.ErrorContains(t, err, "parsing hotspot flags")
 
 	runner := newFakeRunner()
 	runner.outputs = fullRunOutputs()
 
-	err = (Command{runner: runner}).Run([]string{testPkgArg}, failingWriter{})
+	err = newCommand(t, runner).Run([]string{testPkgArg}, failingWriter{})
 	require.ErrorContains(t, err, "writing output")
 }
 
@@ -288,7 +289,7 @@ func TestCommandRunHardErrorBranches(t *testing.T) {
 			runner := newFakeRunner()
 			runner.outputs = test.outputs
 
-			err := (Command{runner: runner}).Run([]string{testPkgArg}, &strings.Builder{})
+			err := newCommand(t, runner).Run([]string{testPkgArg}, &strings.Builder{})
 			require.ErrorContains(t, err, test.want)
 		})
 	}
@@ -373,7 +374,7 @@ func TestResolvePackageRejectsMultiPackage(t *testing.T) {
 		err: nil,
 	}}
 
-	_, err := (Command{runner: runner}).resolvePackage("./...")
+	_, err := newCommand(t, runner).resolvePackage("./...")
 	require.ErrorIs(t, err, errMultiplePackages)
 }
 
@@ -391,6 +392,16 @@ type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) {
 	return 0, errFakeRun
+}
+
+// newCommand builds a command with fake process execution and a temp directory
+// managed by the test, so no test touches the real one.
+func newCommand(t *testing.T, runner commandRunner) Command {
+	t.Helper()
+
+	dir := t.TempDir()
+
+	return Command{runner: runner, tempDir: func() (string, error) { return dir, nil }}
 }
 
 func newFakeRunner() *fakeRunner {
@@ -447,4 +458,51 @@ func goListJSON(importPath string, dir string) []byte {
 func topOutput(function string, flat string, flatPct string, cum string, cumPct string) string {
 	return "      flat  flat%   sum%        cum   cum%\n" +
 		"     " + flat + " " + flatPct + " " + flatPct + " " + cum + " " + cumPct + "  " + function + "\n"
+}
+
+func TestNewAndDefaultRunnerUseTheProcessRunner(t *testing.T) {
+	t.Parallel()
+
+	require.NotNil(t, New().runner, "New must be usable without further wiring")
+	require.NotNil(t, New().tempDir)
+
+	filled := Command{runner: nil, tempDir: nil}.withDefaults()
+	require.NotNil(t, filled.runner, "a zero Command still runs processes")
+	require.NotNil(t, filled.tempDir)
+	require.Equal(t, New().runner, filled.runner, "both paths reach the same process runner")
+
+	dir, err := filled.tempDir()
+	require.NoError(t, err)
+	require.DirExists(t, dir)
+	require.NoError(t, os.RemoveAll(dir))
+}
+
+func TestScoutReportsATempDirectoryFailure(t *testing.T) {
+	t.Parallel()
+
+	runner := newFakeRunner()
+	runner.outputs = []fakeOutput{
+		{out: goListJSON(testImportPath, testSampleDir), err: nil},
+		{out: goListDepsJSON(), err: nil},
+	}
+
+	command := Command{
+		runner:  runner,
+		tempDir: func() (string, error) { return "", errFakeRun },
+	}
+
+	err := command.Run([]string{testPkgArg}, &strings.Builder{})
+	require.ErrorIs(t, err, errFakeRun)
+}
+
+func TestExecRunnerRunsAndReportsRealProcesses(t *testing.T) {
+	t.Parallel()
+
+	output, err := execRunner{}.Run(invocation{Dir: "", Name: "go", Args: []string{"version"}})
+	require.NoError(t, err)
+	require.Contains(t, string(output), "go version")
+
+	_, err = execRunner{}.Run(invocation{Dir: "", Name: "verdict-no-such-binary", Args: nil})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "verdict-no-such-binary")
 }

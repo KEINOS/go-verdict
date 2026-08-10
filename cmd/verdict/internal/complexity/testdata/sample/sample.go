@@ -62,3 +62,45 @@ func Map[T any](items []T, transform func(T) T) []T {
 
 	return out
 }
+
+// Handler is a package-level function literal. The compiler names it after the
+// package initializer, so it has no source-level pprof symbol and the analyzer
+// skips it.
+var Handler = func(value int) int {
+	if value > 0 {
+		return value
+	}
+
+	return -value
+}
+
+// Box is a generic receiver fixture.
+type Box[T any] struct {
+	item T
+}
+
+// Get uses a generic receiver, whose type parameters are dropped from the name.
+func (b Box[T]) Get() T {
+	return b.item
+}
+
+// Pair has a receiver with two type parameters.
+type Pair[K comparable, V any] struct {
+	key   K
+	value V
+}
+
+// Key exercises a multi-parameter generic receiver.
+func (p Pair[K, V]) Key() K {
+	return p.key
+}
+
+func init() {
+	_ = Simple()
+}
+
+func init() {
+	if Simple() > 1 {
+		_ = Simple()
+	}
+}

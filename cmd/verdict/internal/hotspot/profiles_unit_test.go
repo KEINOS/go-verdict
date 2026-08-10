@@ -77,7 +77,7 @@ func TestReadProfilesCollectsEverySignal(t *testing.T) {
 	runner := newFakeRunner()
 	runner.outputs = profileTopOutputs()
 
-	got, err := (Command{runner: runner}).readProfiles("/tmp/hotspot.test", "/tmp/cpu.out", "/tmp/mem.out")
+	got, err := newCommand(t, runner).readProfiles("/tmp/hotspot.test", "/tmp/cpu.out", "/tmp/mem.out")
 	require.NoError(t, err)
 	require.Contains(t, got.CPU, testWorkFunc)
 	require.Contains(t, got.Alloc, testWorkFunc)
@@ -98,7 +98,7 @@ func TestCommandRunUsesSeparateProfilingPasses(t *testing.T) {
 	runner := newFakeRunner()
 	runner.outputs = fullRunOutputs()
 
-	err := (Command{runner: runner}).Run([]string{testPkgArg}, &strings.Builder{})
+	err := newCommand(t, runner).Run([]string{testPkgArg}, &strings.Builder{})
 	require.NoError(t, err)
 	require.Len(t, runner.calls, fullRunCallCount)
 
@@ -120,7 +120,7 @@ func TestCommandRunFastCombinesProfilingIntoOnePass(t *testing.T) {
 
 	var out strings.Builder
 
-	err := (Command{runner: runner}).Run([]string{testFlagFast, testPkgArg}, &out)
+	err := newCommand(t, runner).Run([]string{testFlagFast, testPkgArg}, &out)
 	require.NoError(t, err)
 	require.Len(t, runner.calls, fastRunCallCount)
 
@@ -138,7 +138,7 @@ func TestCommandRunFastOmitsTheCaveatWithoutMeasurement(t *testing.T) {
 
 	var out strings.Builder
 
-	err := (Command{runner: runner}).Run([]string{testFlagFast, testPkgArg}, &out)
+	err := newCommand(t, runner).Run([]string{testFlagFast, testPkgArg}, &out)
 	require.NoError(t, err)
 	require.Contains(t, out.String(), "static estimate")
 	require.NotContains(t, out.String(), "--fast",
@@ -157,7 +157,7 @@ func TestCommandRunRejectsAnInconsistentMemoryPass(t *testing.T) {
 		{out: []byte("PASS\n"), err: nil},
 	}
 
-	err := (Command{runner: runner}).Run([]string{testPkgArg}, &strings.Builder{})
+	err := newCommand(t, runner).Run([]string{testPkgArg}, &strings.Builder{})
 	require.ErrorIs(t, err, errInconsistentPass,
 		"memory samples from a run without the workload would misreport the benchmark")
 	require.ErrorContains(t, err, "--fast")
@@ -197,4 +197,83 @@ func fastRunOutputs() []fakeOutput {
 	outputs := benchmarkRunOutputs()
 
 	return append(outputs[:len(outputs)-1], profileTopOutputs()...)
+}
+
+func TestParseTopLineRejectsMalformedRows(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]string{
+		"too few fields":     "10ms 50% 50% 20ms 100%",
+		"flat percent sign":  "10ms 50 50% 20ms 100% pkg.Fn",
+		"cum percent sign":   "10ms 50% 50% 20ms 100 pkg.Fn",
+		"unparsable flat":    "abcms 50% 50% 20ms 100% pkg.Fn",
+		"unparsable cum":     "10ms 50% 50% abcms 100% pkg.Fn",
+		"unparsable percent": "10ms x% 50% 20ms 100% pkg.Fn",
+		"blank":              "",
+	}
+
+	for name, line := range tests {
+		_, ok := parseTopLine(line, profileCPU)
+		require.False(t, ok, name)
+	}
+
+	_, ok := parseTopLine("10ms 50% 50% 20ms 100% pkg.Fn", profileCPU)
+	require.True(t, ok, "a well-formed row still parses")
+}
+
+func TestParseUnitValueRejectsABadNumberWithAKnownUnit(t *testing.T) {
+	t.Parallel()
+
+	_, ok := parseByteValue("abckB")
+	require.False(t, ok)
+
+	_, ok = parseCountValue("not-a-number")
+	require.False(t, ok)
+}
+
+func TestParseValueAndSampleFlagRejectUnknownKinds(t *testing.T) {
+	t.Parallel()
+
+	unknown := profileKind(99)
+
+	_, ok := parseValue("10", unknown)
+	require.False(t, ok)
+	require.Empty(t, sampleFlag(unknown))
+	require.False(t, unknown.supported())
+}
+
+func TestCommandRunFastReportsABenchmarkFailure(t *testing.T) {
+	t.Parallel()
+
+	runner := newFakeRunner()
+	runner.outputs = []fakeOutput{
+		{out: goListJSON(testImportPath, testPkgDir), err: nil},
+		{out: goListDepsJSON(), err: nil},
+		{out: []byte("compiled"), err: nil},
+		{out: nil, err: errFakeRun},
+	}
+
+	err := newCommand(t, runner).Run([]string{testFlagFast, testPkgArg}, &strings.Builder{})
+	require.ErrorContains(t, err, "running benchmark workload")
+}
+
+func TestCommandRunReportsAMemoryPassFailure(t *testing.T) {
+	t.Parallel()
+
+	runner := newFakeRunner()
+
+	outputs := benchmarkRunOutputs()
+	outputs[len(outputs)-1] = fakeOutput{out: nil, err: errFakeRun}
+	runner.outputs = outputs
+
+	err := newCommand(t, runner).Run([]string{testPkgArg}, &strings.Builder{})
+	require.ErrorContains(t, err, "running benchmark workload")
+}
+
+func TestParseUnitValueFallsBackToABareNumber(t *testing.T) {
+	t.Parallel()
+
+	got, ok := parseByteValue("1024")
+	require.True(t, ok, "pprof drops the unit when the value needs no scaling")
+	require.InDelta(t, 1024.0, got, 0.001)
 }
