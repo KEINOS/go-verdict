@@ -52,9 +52,10 @@ type Want struct {
 
 // TextAssert represents assertions for text output.
 type TextAssert struct {
-	Equals   *string  `yaml:"equals"`
-	Contains []string `yaml:"contains"`
-	Matches  []string `yaml:"matches"`
+	Equals      *string  `yaml:"equals"`
+	Contains    []string `yaml:"contains"`
+	NotContains []string `yaml:"not_contains"`
+	Matches     []string `yaml:"matches"`
 }
 
 // ScenarioDuration decodes YAML duration strings such as "30s".
@@ -91,7 +92,7 @@ func decodeTestScenario(data []byte) (*Suite, error) {
 }
 
 func emptyTextAssert() TextAssert {
-	return TextAssert{Equals: nil, Contains: nil, Matches: nil}
+	return TextAssert{Equals: nil, Contains: nil, NotContains: nil, Matches: nil}
 }
 
 func (duration *ScenarioDuration) UnmarshalYAML(value *yaml.Node) error {

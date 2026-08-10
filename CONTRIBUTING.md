@@ -124,10 +124,12 @@ Project layout:
 ```text
 cmd/verdict/                   CLI entry point
 cmd/verdict/internal/helptopic/ Embedded workflow help topics for verdict help
+cmd/verdict/internal/complexity/ Static cyclomatic and cognitive complexity
 cmd/verdict/internal/hotspot/  CLI-only hotspot Scout command
 cmd/verdict/internal/skill/    Embedded AI Agent skill text
 verdict/                       Public API, evaluator, and output writer
 verdict/internal/benchparser/  Benchmark input decoders
+internal/pareto/               Pareto aggregation shared by the judge and scout
 testdata/                      Demo benchmarks and generated fixtures
 testdata/e2e-scenarios/        YAML E2E scenarios for the built CLI
 testdata/e2e-fixtures/         Generated text fixtures used by E2E scenarios

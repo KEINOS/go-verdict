@@ -4,7 +4,7 @@ description: Use for Go performance requests, including "optimize this Go code",
 license: MIT
 metadata:
   author: KEINOS and The go-verdict Contributors
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # Verdict
@@ -16,7 +16,7 @@ If the commands are missing, install them first: `go install github.com/KEINOS/g
 Detailed guidance lives in the CLI, not in this skill. Fetch one topic only when you reach that step:
 
 - `verdict help bootstrap`: no benchmark exists yet; create representative evidence first.
-- `verdict help hotspot`: find which function to optimize.
+- `verdict help hotspot`: find which function to optimize, with or without an existing benchmark.
 - `verdict help benchstat`: judge a before/after edit of one implementation.
 - `verdict help gotestbench`: judge two implementations compared in one run.
 - `verdict help results`: interpret outcomes, the Pareto rule, and inconclusive results.
@@ -24,7 +24,7 @@ Detailed guidance lives in the CLI, not in this skill. Fetch one topic only when
 ## Loop
 
 1. Check benchmark readiness: benchmarks must cover the user-visible workflow with realistic inputs. If missing or too narrow, bootstrap one before writing candidate code (`verdict help bootstrap`).
-2. Unsure where to start? Run `verdict hotspot ./pkg` to get the first function to inspect (`verdict help hotspot`).
+2. Unsure where to start? Run `verdict hotspot ./pkg` to get the first function to inspect (`verdict help hotspot`). It ranks CPU, memory, and complexity signals, and still suggests a target when no benchmark exists yet.
 3. Capture the baseline, then write the candidate while preserving the original implementation.
 4. Run correctness tests first. Reject semantic regressions and unaccepted behavior caveats before measuring.
 5. Measure with `-benchmem` and judge with exactly one matching `verdict` command (table below).
@@ -53,6 +53,7 @@ Use `-count=3` to `-count=5` for cheap exploration. Use `-count=10` or more for 
 - Insufficient-sample and benchmark-set-mismatch errors mean no decision; fix the setup or collect more samples, then rerun (`verdict help results`).
 - `--require new-wins` is an executable gate: it still prints the report, then exits non-zero unless every verdict is `new-wins`.
 - Reject candidates that win by exploiting benchmark shape, flags, labels, fixture names, or unrepresentative benchmarks (overfitting).
+- A `complexity-hotspot` suggestion is a static estimate of where to look, not measured cost. Never report it as a performance finding.
 - Before reporting, verify the working tree still contains the candidate that produced the measured result.
 
 ## Final Report Format

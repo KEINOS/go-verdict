@@ -14,9 +14,13 @@ Use this workflow before choosing what to optimize.
 verdict hotspot ./your/package
 ```
 
-The Scout command runs existing benchmarks for one package, collects CPU and allocation profiles in a temporary directory, and suggests the first user-code function to inspect. It does not decide whether a code change is faster. After changing code, use one of the Judge workflows below to compare before and after benchmark results.
+The Scout command runs the existing benchmarks for one package, collects the profiles in a temporary directory, reads the module sources, and suggests the first user-code function to inspect. It does not decide whether a code change is faster. After changing code, use one of the Judge workflows below to compare before and after benchmark results.
 
-If no benchmark workload runs, `verdict hotspot` explains that state and exits without changing user code. Add a `BenchmarkXxx` function or pass `--bench` so the workload covers the code you want to inspect. `verdict help bootstrap` explains how to create a representative benchmark when none exists.
+Five signals score every function: CPU time, allocated bytes, allocation count, retained heap, and source complexity. Candidates are ranked by Pareto comparison, so a function that is hot in several ways outranks one that is hot in only one, and a function that is both hot and complex is reported as `hot-and-complex`.
+
+The benchmarks run twice by default, once for the CPU profile and once for the memory profile, because collecting both in one run skews the CPU samples toward allocation paths. Use `--fast` to trade that accuracy for half the run time.
+
+If no benchmark workload runs, `verdict hotspot` falls back to the most complex function in the package and says plainly that the suggestion is a static estimate, not measured cost. Add a `BenchmarkXxx` function or pass `--bench` so the workload covers the code you want to inspect. `verdict help bootstrap` explains how to create a representative benchmark when none exists.
 
 ## Alternative Comparison
 
