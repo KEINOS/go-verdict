@@ -145,6 +145,24 @@ func TestCommandRunFastOmitsTheCaveatWithoutMeasurement(t *testing.T) {
 		"nothing was measured, so there is no CPU accuracy to caveat")
 }
 
+func TestCommandRunRejectsAnInconsistentMemoryPass(t *testing.T) {
+	t.Parallel()
+
+	runner := newFakeRunner()
+	runner.outputs = []fakeOutput{
+		{out: goListJSON(testImportPath, testPkgDir), err: nil},
+		{out: goListDepsJSON(), err: nil},
+		{out: []byte("compiled"), err: nil},
+		{out: []byte(benchmarkRunLine), err: nil},
+		{out: []byte("PASS\n"), err: nil},
+	}
+
+	err := (Command{runner: runner}).Run([]string{testPkgArg}, &strings.Builder{})
+	require.ErrorIs(t, err, errInconsistentPass,
+		"memory samples from a run without the workload would misreport the benchmark")
+	require.ErrorContains(t, err, "--fast")
+}
+
 func TestHelpTextDocumentsFast(t *testing.T) {
 	t.Parallel()
 

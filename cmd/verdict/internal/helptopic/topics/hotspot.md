@@ -16,6 +16,8 @@ Run the command from inside the target Go module. The package argument resolves 
 
 By default the benchmarks run twice: once for the CPU profile and once for the memory profile. Collecting both in one run needs `-test.memprofilerate=1`, which inflates CPU samples along allocation paths and skews the ranking. `--fast` collapses the two passes into one, halves the run time, and says in the caveat that the CPU ranking is approximate.
 
+Both passes must run the same workload. If the memory pass runs no benchmark after the CPU pass did, the command fails instead of reporting setup allocations as the workload's own. A benchmark that skips under allocation profiling causes this; `--fast` profiles in one pass and avoids it.
+
 ## Signals
 
 Five signals score every function. A signal counts when the function reaches its threshold.

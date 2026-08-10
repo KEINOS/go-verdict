@@ -22,6 +22,7 @@ const (
 	testSampleDir  = "testdata/sample"
 	testFlagFormat = "--format"
 	testFlagFast   = "--fast"
+	testSampleFile = "sample.go"
 )
 
 func TestParseArgsValidation(t *testing.T) {
@@ -349,7 +350,7 @@ func TestBaseResultFallbackCaveatAndNoClearText(t *testing.T) {
 
 	result := baseResult(
 		defaultOptions(testPkgArg),
-		packageInfo{ImportPath: testImportPath, Dir: testPkgDir, Module: nil, GoFiles: nil},
+		packageInfo{ImportPath: testImportPath, Dir: testPkgDir, Module: nil, GoFiles: nil, CgoFiles: nil},
 	)
 
 	require.Contains(t, result.Caveat, "Module path was unavailable")

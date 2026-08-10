@@ -241,8 +241,8 @@ func runnersUp(ranked []candidate, top int) []Choice {
 }
 
 // buildCandidates unions every function that any signal put above its
-// threshold. Complex code anywhere in the module enriches a measured
-// candidate, but only the target package can qualify on complexity alone.
+// threshold. Complexity scores any module-local function, but only the target
+// package can enter the candidate set on complexity alone.
 func buildCandidates(profiles profileSet, static map[string]complexity.Stat, importPath string) []candidate {
 	items := make(map[string]*candidate)
 
@@ -298,7 +298,7 @@ func addStatic(items map[string]*candidate, static map[string]complexity.Stat, i
 			continue
 		}
 
-		applyStatic(item, stat, importPath)
+		applyStatic(item, stat)
 	}
 
 	for _, stat := range static {
@@ -310,18 +310,19 @@ func addStatic(items map[string]*candidate, static map[string]complexity.Stat, i
 			continue
 		}
 
-		applyStatic(itemFor(items, stat.Symbol), stat, importPath)
+		applyStatic(itemFor(items, stat.Symbol), stat)
 	}
 }
 
-func applyStatic(item *candidate, stat complexity.Stat, importPath string) {
+// applyStatic attaches the source position and complexity of one function.
+// Complexity scores every candidate, including one measured in another
+// module-local package, because hiding the score there would misreport a
+// function the profiles already proved to be hot.
+func applyStatic(item *candidate, stat complexity.Stat) {
 	item.file = stat.File
 	item.line = stat.Line
 	item.complexity = Complexity{Cyclomatic: stat.Cyclomatic, Cognitive: stat.Cognitive}
-
-	if stat.ImportPath == importPath {
-		item.scores[idxComplexity] = complexityScore(stat)
-	}
+	item.scores[idxComplexity] = complexityScore(stat)
 }
 
 func itemFor(items map[string]*candidate, function string) *candidate {

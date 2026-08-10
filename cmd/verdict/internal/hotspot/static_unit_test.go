@@ -114,7 +114,7 @@ func statOf(symbol string, cyclomatic int, cognitive int) complexity.Stat {
 	return complexity.Stat{
 		ImportPath: symbol[:strings.LastIndex(symbol, ".")],
 		Symbol:     symbol,
-		File:       "sample.go",
+		File:       testSampleFile,
 		Line:       1,
 		Cyclomatic: cyclomatic,
 		Cognitive:  cognitive,
@@ -122,7 +122,13 @@ func statOf(symbol string, cyclomatic int, cognitive int) complexity.Stat {
 }
 
 func samplePackageInfo() packageInfo {
-	info := packageInfo{ImportPath: testImportPath, Dir: testSampleDir, Module: nil, GoFiles: nil}
+	info := packageInfo{
+		ImportPath: testImportPath,
+		Dir:        testSampleDir,
+		Module:     nil,
+		GoFiles:    nil,
+		CgoFiles:   nil,
+	}
 	info.Module = &struct {
 		Path string `json:"Path"`
 	}{Path: testModulePath}
@@ -178,6 +184,19 @@ func TestResolveModulePackagesWithoutModulePath(t *testing.T) {
 	require.Empty(t, runner.calls, "no package listing is needed")
 }
 
+func TestResolveModulePackagesIncludesCgoSources(t *testing.T) {
+	t.Parallel()
+
+	runner := newFakeRunner()
+	runner.outputs = []fakeOutput{{out: goListCgoJSON(), err: nil}}
+
+	got, err := (Command{runner: runner}).resolveModulePackages(testPkgArg, testModulePath)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Equal(t, []string{"sample.go", "bridge.go"}, got[0].Files,
+		"a cgo package keeps its Go-side sources in CgoFiles")
+}
+
 func TestCommandRunFallsBackToComplexityWithoutBenchmark(t *testing.T) {
 	t.Parallel()
 
@@ -226,6 +245,12 @@ func goListDepsJSON() []byte {
 		` "GoFiles": ["sample.go"], "Module": {"Path": "` + testModulePath + `"}}`
 
 	return []byte(stdlib + "\n" + external + "\n" + local + "\n")
+}
+
+func goListCgoJSON() []byte {
+	return []byte(`{"ImportPath": "` + testImportPath + `", "Dir": "` + testSampleDir + `",` +
+		` "GoFiles": ["sample.go"], "CgoFiles": ["bridge.go"],` +
+		` "Module": {"Path": "` + testModulePath + `"}}` + "\n")
 }
 
 func noBenchmarkOutputs() []fakeOutput {

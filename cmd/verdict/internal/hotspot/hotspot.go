@@ -48,6 +48,7 @@ var (
 	errInvalidCount     = errors.New("count must be at least 1")
 	errInvalidTop       = errors.New("top must be at least 1")
 	errInvalidFormat    = errors.New("format must be text or json")
+	errInconsistentPass = errors.New("the memory profiling pass ran no benchmark workload after the CPU pass did")
 	errMissingPackage   = errors.New("hotspot requires exactly one package")
 	errMultiplePackages = errors.New("hotspot supports exactly one package, not a multi-package pattern")
 	errNilOutput        = errors.New("writing output: nil output writer")
@@ -87,6 +88,7 @@ type packageInfo struct {
 	ImportPath string   `json:"ImportPath"`
 	Dir        string   `json:"Dir"`
 	GoFiles    []string `json:"GoFiles"`
+	CgoFiles   []string `json:"CgoFiles"`
 }
 
 /* Constructors and Methods */
@@ -200,9 +202,16 @@ func (command Command) runProfilingPasses(
 		return false, nil
 	}
 
-	_, err = command.runBenchmark(pkgDir, binaryPath, "", memPath, opts)
+	output, err = command.runBenchmark(pkgDir, binaryPath, "", memPath, opts)
 	if err != nil {
 		return false, err
+	}
+
+	// The two passes must measure the same workload. Without this check a
+	// benchmark that silently skips under allocation profiling would have its
+	// setup and runtime allocations reported as the workload's own.
+	if !benchmarkRowPattern.Match(output) {
+		return false, fmt.Errorf("%w: try --fast to profile in one pass", errInconsistentPass)
 	}
 
 	return true, nil
@@ -378,14 +387,15 @@ func (command Command) resolveModulePackages(pkg string, modulePath string) ([]c
 			return nil, fmt.Errorf("decoding go list output: %w", err)
 		}
 
-		if item.Module == nil || item.Module.Path != modulePath || len(item.GoFiles) == 0 {
+		files := item.sourceFiles()
+		if item.Module == nil || item.Module.Path != modulePath || len(files) == 0 {
 			continue
 		}
 
 		packages = append(packages, complexity.Package{
 			ImportPath: item.ImportPath,
 			Dir:        item.Dir,
-			Files:      item.GoFiles,
+			Files:      files,
 		})
 	}
 
@@ -408,6 +418,16 @@ func (execRunner) Run(command invocation) ([]byte, error) {
 }
 
 // packageInfo
+
+// sourceFiles lists the Go sources of the package. A cgo package keeps its
+// Go-side sources in CgoFiles, which parse like any other Go file.
+func (pkgInfo packageInfo) sourceFiles() []string {
+	files := make([]string, 0, len(pkgInfo.GoFiles)+len(pkgInfo.CgoFiles))
+	files = append(files, pkgInfo.GoFiles...)
+	files = append(files, pkgInfo.CgoFiles...)
+
+	return files
+}
 
 func (pkgInfo packageInfo) modulePath() string {
 	if pkgInfo.Module == nil {

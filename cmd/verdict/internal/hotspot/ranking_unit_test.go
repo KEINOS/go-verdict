@@ -143,25 +143,29 @@ func TestClassifyReportsNoClearHotspot(t *testing.T) {
 	require.Empty(t, got.Function)
 }
 
-func TestClassifyEnrichesCandidatesFromOtherPackages(t *testing.T) {
+func TestClassifyScoresComplexityForEveryMeasuredPackage(t *testing.T) {
 	t.Parallel()
 
-	sibling := "example.com/project/other.Helper"
+	hot := "example.com/project/other.Helper"
+	cold := "example.com/project/other.Untouched"
 
 	got := classify(testResult(), profileSet{
-		CPU:          map[string]pprofRow{sibling: row(sibling, 40, 60)},
+		CPU:          map[string]pprofRow{hot: row(hot, 40, 60)},
 		Alloc:        map[string]pprofRow{},
 		AllocObjects: map[string]pprofRow{},
 		Inuse:        map[string]pprofRow{},
 	}, map[string]complexity.Stat{
-		sibling: statOf(sibling, 40, 40),
+		hot:  statOf(hot, 40, 40),
+		cold: statOf(cold, 99, 99),
 	}, defaultTop)
 
-	require.Equal(t, sibling, got.Function)
-	require.Equal(t, "sample.go", got.File, "a hot function outside the package still gets its position")
+	require.Equal(t, hot, got.Function)
+	require.Equal(t, testSampleFile, got.File, "a hot function outside the package still gets its position")
 	require.Equal(t, 40, got.Complexity.Cyclomatic)
-	require.Equal(t, classCPUHotspot, got.Classification,
-		"complexity outside the target package never adds a signal")
+	require.Equal(t, classHotAndComplex, got.Classification,
+		"the profiles already proved this function hot, so its complexity is real evidence")
+	require.Empty(t, got.Candidates,
+		"complex but cold code outside the target package is never a candidate")
 }
 
 func TestStaticKeyJoinsGenericAndClosureRows(t *testing.T) {
@@ -178,7 +182,7 @@ func TestStaticKeyJoinsGenericAndClosureRows(t *testing.T) {
 
 	require.Equal(t, classHotAndComplex, got.Classification,
 		"a closure carries the complexity of the function that declares it")
-	require.Equal(t, "sample.go", got.File)
+	require.Equal(t, testSampleFile, got.File)
 }
 
 func TestClassifyReportsAGenericFunctionOnce(t *testing.T) {
