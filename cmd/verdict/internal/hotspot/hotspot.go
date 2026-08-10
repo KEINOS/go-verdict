@@ -55,11 +55,12 @@ var (
 	errNilOutput        = errors.New("writing output: nil output writer")
 )
 
-// Command runs the hotspot Scout command. Both dependencies are injected so
+// Command runs the hotspot Scout command. Its dependencies are injected so
 // the command can be exercised without spawning processes or touching disk.
 type Command struct {
-	runner  commandRunner
-	tempDir tempDirMaker
+	runner   commandRunner
+	statFile fileStater
+	tempDir  tempDirMaker
 }
 
 type commandRunner interface {
@@ -69,6 +70,8 @@ type commandRunner interface {
 // tempDirMaker creates the scratch directory that holds the compiled test
 // binary and the profile files.
 type tempDirMaker func() (string, error)
+
+type fileStater func(string) (os.FileInfo, error)
 
 type execRunner struct{}
 
@@ -104,7 +107,7 @@ type packageInfo struct {
 
 // New returns a hotspot command with the default process runner.
 func New() Command {
-	return Command{runner: execRunner{}, tempDir: osTempDir}
+	return Command{runner: execRunner{}, statFile: os.Stat, tempDir: osTempDir}
 }
 
 func osTempDir() (string, error) {
@@ -151,6 +154,10 @@ func (command Command) withDefaults() Command {
 		command.runner = execRunner{}
 	}
 
+	if command.statFile == nil {
+		command.statFile = os.Stat
+	}
+
 	if command.tempDir == nil {
 		command.tempDir = osTempDir
 	}
@@ -159,12 +166,14 @@ func (command Command) withDefaults() Command {
 }
 
 func (command Command) compileBenchmark(binaryPath string, pkg string) (bool, error) {
+	command = command.withDefaults()
+
 	_, err := command.runner.Run(invocation{Dir: "", Name: "go", Args: []string{"test", "-c", "-o", binaryPath, pkg}})
 	if err != nil {
 		return false, fmt.Errorf("compiling benchmark binary: %w", err)
 	}
 
-	_, err = os.Stat(binaryPath)
+	_, err = command.statFile(binaryPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}

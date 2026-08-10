@@ -401,7 +401,7 @@ func newCommand(t *testing.T, runner commandRunner) Command {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "hotspot.test"), nil, 0o600))
 
-	return Command{runner: runner, tempDir: func() (string, error) { return dir, nil }}
+	return Command{runner: runner, statFile: os.Stat, tempDir: func() (string, error) { return dir, nil }}
 }
 
 func newFakeRunner() *fakeRunner {
@@ -466,7 +466,7 @@ func TestNewAndDefaultRunnerUseTheProcessRunner(t *testing.T) {
 	require.NotNil(t, New().runner, "New must be usable without further wiring")
 	require.NotNil(t, New().tempDir)
 
-	filled := Command{runner: nil, tempDir: nil}.withDefaults()
+	filled := Command{runner: nil, statFile: nil, tempDir: nil}.withDefaults()
 	require.NotNil(t, filled.runner, "a zero Command still runs processes")
 	require.NotNil(t, filled.tempDir)
 	require.Equal(t, New().runner, filled.runner, "both paths reach the same process runner")
@@ -487,8 +487,9 @@ func TestScoutReportsATempDirectoryFailure(t *testing.T) {
 	}
 
 	command := Command{
-		runner:  runner,
-		tempDir: func() (string, error) { return "", errFakeRun },
+		runner:   runner,
+		statFile: os.Stat,
+		tempDir:  func() (string, error) { return "", errFakeRun },
 	}
 
 	err := command.Run([]string{testPkgArg}, &strings.Builder{})
@@ -498,15 +499,19 @@ func TestScoutReportsATempDirectoryFailure(t *testing.T) {
 func TestCompileBenchmarkReportsBinaryInspectionFailure(t *testing.T) {
 	t.Parallel()
 
-	parentFile := filepath.Join(t.TempDir(), "not-a-directory")
-	require.NoError(t, os.WriteFile(parentFile, nil, 0o600))
-
 	runner := newFakeRunner()
 	runner.outputs = []fakeOutput{{out: []byte("compiled"), err: nil}}
 
-	command := Command{runner: runner, tempDir: nil}
-	compiled, err := command.compileBenchmark(filepath.Join(parentFile, "hotspot.test"), testPkgArg)
+	command := Command{
+		runner: runner,
+		statFile: func(string) (os.FileInfo, error) {
+			return nil, errFakeRun
+		},
+		tempDir: nil,
+	}
+	compiled, err := command.compileBenchmark("hotspot.test", testPkgArg)
 	require.False(t, compiled)
+	require.ErrorIs(t, err, errFakeRun)
 	require.ErrorContains(t, err, "checking benchmark binary")
 }
 
