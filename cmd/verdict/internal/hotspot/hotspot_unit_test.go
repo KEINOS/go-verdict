@@ -65,6 +65,7 @@ func parseArgsCases() []parseArgsCase {
 				bench:     "BenchmarkFoo",
 				benchtime: "25x",
 				count:     3,
+				top:       defaultTop,
 				format:    formatJSON,
 				pkg:       testPkgArg,
 				fast:      false,
@@ -80,6 +81,7 @@ func parseArgsCases() []parseArgsCase {
 		{name: "missing package", args: nil, want: zeroOptions(), wantErr: errMissingPackage},
 		{name: "extra package", args: []string{"./a", "./b"}, want: zeroOptions(), wantErr: errMissingPackage},
 		{name: "bad count", args: []string{"--count", "0", testPkgArg}, want: zeroOptions(), wantErr: errInvalidCount},
+		{name: "bad top", args: []string{"--top", "0", testPkgArg}, want: zeroOptions(), wantErr: errInvalidTop},
 		{
 			name:    "bad benchtime",
 			args:    []string{"--benchtime", "zero", testPkgArg},
@@ -95,6 +97,7 @@ func defaultOptions(pkg string) options {
 		bench:     defaultBench,
 		benchtime: defaultBenchtime,
 		count:     defaultCount,
+		top:       defaultTop,
 		format:    defaultFormat,
 		pkg:       pkg,
 		fast:      false,
@@ -179,69 +182,14 @@ func TestUserRowsFiltersAndNormalizesVendor(t *testing.T) {
 	require.NotContains(t, got, "runtime.mallocgc")
 }
 
-func TestClassifyMixedAndTieBreaking(t *testing.T) {
-	t.Parallel()
-
-	base := testResult()
-
-	got := classify(base, profileSet{
-		CPU: map[string]pprofRow{
-			testMixedFunc:                 {Function: testMixedFunc, Flat: 10, FlatPct: 10, Cum: 20, CumPct: 20},
-			"example.com/project/pkg.CPU": {Function: "example.com/project/pkg.CPU", Flat: 50, FlatPct: 50, Cum: 50, CumPct: 50},
-		},
-		Alloc: map[string]pprofRow{
-			testMixedFunc: {Function: testMixedFunc, Flat: bytesPerKB, FlatPct: 10, Cum: bytesPerKB, CumPct: 10},
-		},
-		AllocObjects: nil,
-		Inuse:        nil,
-	}, nil)
-	require.Equal(t, classMixedHotspot, got.Classification)
-	require.Equal(t, testMixedFunc, got.Function)
-	require.Nil(t, got.Secondary)
-
-	got = classify(base, profileSet{
-		CPU: map[string]pprofRow{
-			"example.com/project/pkg.Beta": {Function: "example.com/project/pkg.Beta", Flat: 0, FlatPct: 10, Cum: 0, CumPct: 10},
-			"example.com/project/pkg.Alfa": {Function: "example.com/project/pkg.Alfa", Flat: 0, FlatPct: 10, Cum: 0, CumPct: 10},
-		},
-		Alloc: map[string]pprofRow{
-			testAllocFunc: {Function: testAllocFunc, Flat: 0, FlatPct: 60, Cum: 0, CumPct: 60},
-		},
-		AllocObjects: nil,
-		Inuse:        nil,
-	}, nil)
-	require.Equal(t, classCPUHotspot, got.Classification)
-	require.Equal(t, "example.com/project/pkg.Alfa", got.Function)
-	require.NotNil(t, got.Secondary)
-	require.Equal(t, "example.com/project/pkg.Beta", got.Secondary.Function)
-}
-
-func TestClassifyNoClear(t *testing.T) {
-	t.Parallel()
-
-	base := testResult()
-	base.Classification = ""
-	base.Reason = ""
-
-	got := classify(base, profileSet{
-		CPU:          map[string]pprofRow{},
-		Alloc:        map[string]pprofRow{},
-		AllocObjects: map[string]pprofRow{},
-		Inuse:        map[string]pprofRow{},
-	}, nil)
-
-	require.Equal(t, classNoClearHotspot, got.Classification)
-	require.Contains(t, got.Caveat, "No clear")
-}
-
 func TestFormatResultTextAndJSON(t *testing.T) {
 	t.Parallel()
 
 	result := testResult()
 	result.Classification = classCPUHotspot
-	result.Reason = classCPUHotspot
 	result.Function = testWorkFunc
-	result.CPU = Metric{FlatMS: 10, FlatBytes: 0, FlatPct: 20, CumMS: 30, CumBytes: 0, CumPct: 40}
+	result.Signals = []string{signalCPU}
+	result.CPU = Metric{Unit: unitMS, Flat: 10, FlatPct: 20, Cum: 30, CumPct: 40}
 	result.Next = "Judge candidate changes with verdict."
 
 	text, err := formatResult(result, defaultFormat)
@@ -252,7 +200,8 @@ func TestFormatResultTextAndJSON(t *testing.T) {
 	jsonText, err := formatResult(result, formatJSON)
 	require.NoError(t, err)
 	require.Contains(t, jsonText, `"schema_version": 2`)
-	require.Contains(t, jsonText, `"reason": "cpu-hotspot"`)
+	require.Contains(t, jsonText, `"classification": "cpu-hotspot"`)
+	require.Contains(t, jsonText, `"unit": "ms"`)
 
 	_, err = formatResult(result, "yaml")
 	require.ErrorIs(t, err, errInvalidFormat)
@@ -271,7 +220,7 @@ func TestCommandRunSuccessNoBenchmarkAndErrors(t *testing.T) {
 
 		err := (Command{runner: runner}).Run([]string{"--bench", "BenchmarkWork", testPkgArg}, &out)
 		require.NoError(t, err)
-		require.Contains(t, out.String(), classMixedHotspot)
+		require.Contains(t, out.String(), classHotAndComplex, "Work is hot in CPU and allocations and is complex")
 		require.Len(t, runner.calls, fullRunCallCount)
 		require.Equal(t, testPkgDir, runner.calls[3].Dir)
 		require.Contains(t, runner.calls[3].Args, "-test.bench=BenchmarkWork")
@@ -447,7 +396,7 @@ func newFakeRunner() *fakeRunner {
 }
 
 func zeroOptions() options {
-	return options{bench: "", benchtime: "", count: 0, format: "", pkg: "", fast: false}
+	return options{bench: "", benchtime: "", count: 0, top: 0, format: "", pkg: "", fast: false}
 }
 
 // testResult is a fully specified baseline report for classification and
@@ -459,14 +408,16 @@ func testResult() Result {
 		ImportPath:     testImportPath,
 		Benchmark:      ".",
 		Classification: classNoClearHotspot,
-		Reason:         classNoClearHotspot,
 		Function:       "",
 		File:           "",
 		Line:           0,
-		CPU:            zeroMetric(),
-		Alloc:          zeroMetric(),
+		Signals:        []string{},
+		CPU:            zeroMetric(unitMS),
+		AllocBytes:     zeroMetric(unitBytes),
+		AllocObjects:   zeroMetric(unitObjects),
+		Retained:       zeroMetric(unitBytes),
 		Complexity:     Complexity{Cyclomatic: 0, Cognitive: 0},
-		Secondary:      nil,
+		Candidates:     []Choice{},
 		Caveat:         "",
 		Next:           "next",
 	}

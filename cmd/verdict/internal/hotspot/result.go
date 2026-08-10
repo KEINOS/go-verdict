@@ -11,6 +11,10 @@ import (
 const (
 	schemaVersion = 2
 
+	unitBytes   = "bytes"
+	unitMS      = "ms"
+	unitObjects = "objects"
+
 	fastCaveat = "CPU shares were measured with allocation profiling enabled (--fast), " +
 		"so treat the CPU ranking as approximate."
 
@@ -25,9 +29,9 @@ const (
 		"not measured cost. Widen the benchmark workload to raise accuracy. See: verdict help bootstrap."
 )
 
-// Result is the JSON-serializable hotspot report.
+// Result is the JSON-serializable hotspot report. The top-level fields describe
+// the suggested function, and Candidates lists the runners-up in rank order.
 type Result struct {
-	Secondary      *Choice    `json:"secondary"`
 	Benchmark      string     `json:"benchmark"`
 	Caveat         string     `json:"caveat"`
 	Classification string     `json:"classification"`
@@ -36,22 +40,25 @@ type Result struct {
 	ImportPath     string     `json:"import_path"`
 	Next           string     `json:"next"`
 	Package        string     `json:"package"`
-	Reason         string     `json:"reason"`
-	Alloc          Metric     `json:"alloc"`
-	CPU            Metric     `json:"cpu"`
+	Candidates     []Choice   `json:"candidates"`
+	Signals        []string   `json:"signals"`
+	AllocBytes     Metric     `json:"alloc_bytes"`
+	AllocObjects   Metric     `json:"alloc_objects"`
 	Complexity     Complexity `json:"complexity"`
+	CPU            Metric     `json:"cpu"`
+	Retained       Metric     `json:"retained"`
 	Line           int        `json:"line"`
 	SchemaVersion  int        `json:"schema_version"`
 }
 
-// Metric describes one profile contribution.
+// Metric describes one signal's contribution for one function. Flat counts the
+// function itself and Cum counts everything it calls.
 type Metric struct {
-	CumPct    float64 `json:"cum_pct"`
-	FlatPct   float64 `json:"flat_pct"`
-	CumBytes  float64 `json:"cum_bytes,omitempty"`
-	CumMS     float64 `json:"cum_ms,omitempty"`
-	FlatBytes float64 `json:"flat_bytes,omitempty"`
-	FlatMS    float64 `json:"flat_ms,omitempty"`
+	Unit    string  `json:"unit"`
+	Cum     float64 `json:"cum"`
+	CumPct  float64 `json:"cum_pct"`
+	Flat    float64 `json:"flat"`
+	FlatPct float64 `json:"flat_pct"`
 }
 
 // Complexity describes the static complexity of one function.
@@ -60,17 +67,21 @@ type Complexity struct {
 	Cognitive  int `json:"cognitive"`
 }
 
-// Choice describes a primary or secondary hotspot candidate.
+// Choice describes one hotspot candidate.
 type Choice struct {
 	Classification string     `json:"classification"`
 	File           string     `json:"file"`
 	Function       string     `json:"function"`
-	Reason         string     `json:"reason"`
-	Alloc          Metric     `json:"alloc"`
-	CPU            Metric     `json:"cpu"`
+	Signals        []string   `json:"signals"`
+	AllocBytes     Metric     `json:"alloc_bytes"`
+	AllocObjects   Metric     `json:"alloc_objects"`
 	Complexity     Complexity `json:"complexity"`
+	CPU            Metric     `json:"cpu"`
+	Retained       Metric     `json:"retained"`
 	Line           int        `json:"line"`
 }
+
+/* Helper Functions */
 
 // appendCaveat joins one more caveat sentence to an existing caveat.
 func appendCaveat(existing string, addition string) string {
@@ -81,21 +92,6 @@ func appendCaveat(existing string, addition string) string {
 	return existing + " " + addition
 }
 
-// withFastCaveat records that --fast lowered the CPU accuracy of the report.
-func withFastCaveat(result Result, opts options) Result {
-	if !opts.fast {
-		return result
-	}
-
-	result.Caveat = appendCaveat(result.Caveat, fastCaveat)
-
-	return result
-}
-
-func allocMetric(row pprofRow) Metric {
-	return Metric{FlatMS: 0, FlatBytes: row.Flat, FlatPct: row.FlatPct, CumMS: 0, CumBytes: row.Cum, CumPct: row.CumPct}
-}
-
 func baseResult(opts options, pkgInfo packageInfo) Result {
 	result := Result{
 		SchemaVersion:  schemaVersion,
@@ -103,14 +99,16 @@ func baseResult(opts options, pkgInfo packageInfo) Result {
 		ImportPath:     pkgInfo.ImportPath,
 		Benchmark:      opts.bench,
 		Classification: classNoClearHotspot,
-		Reason:         classNoClearHotspot,
 		Function:       "",
 		File:           "",
 		Line:           0,
-		CPU:            zeroMetric(),
-		Alloc:          zeroMetric(),
+		Signals:        []string{},
+		CPU:            zeroMetric(unitMS),
+		AllocBytes:     zeroMetric(unitBytes),
+		AllocObjects:   zeroMetric(unitObjects),
+		Retained:       zeroMetric(unitBytes),
 		Complexity:     Complexity{Cyclomatic: 0, Cognitive: 0},
-		Secondary:      nil,
+		Candidates:     []Choice{},
 		Caveat:         "",
 		Next:           "Optimize a candidate, then judge before/after benchmark results with verdict.",
 	}
@@ -120,10 +118,6 @@ func baseResult(opts options, pkgInfo packageInfo) Result {
 	}
 
 	return result
-}
-
-func cpuMetric(row pprofRow) Metric {
-	return Metric{FlatMS: row.Flat, FlatBytes: 0, FlatPct: row.FlatPct, CumMS: row.Cum, CumBytes: 0, CumPct: row.CumPct}
 }
 
 func formatResult(result Result, format string) (string, error) {
@@ -143,36 +137,59 @@ func formatResult(result Result, format string) (string, error) {
 }
 
 func formatText(result Result) string {
-	switch result.Reason {
+	switch result.Classification {
 	case classNoBenchmark:
 		return withCaveat(result.Package+": no benchmark workload ran; add BenchmarkXxx or pass --bench.\n", result.Caveat)
 	case classNoClearHotspot:
 		return withCaveat(result.Package+": no clear user-code hotspot found for this benchmark workload.\n", result.Caveat)
 	default:
-		text := fmt.Sprintf(
-			"%s: inspect %s%s (%s)\nNext: %s\n",
-			result.Package, result.Function, sourcePosition(result), strings.Join(signalParts(result), "; "), result.Next,
-		)
-
-		if result.Caveat != "" {
-			text += "Caveat: " + result.Caveat + "\n"
-		}
-
-		return text
+		return formatSuggestion(result)
 	}
+}
+
+func formatSuggestion(result Result) string {
+	text := fmt.Sprintf(
+		"%s: inspect %s%s (%s)\n",
+		result.Package, result.Function, sourcePosition(result.File, result.Line), strings.Join(signalParts(result), "; "),
+	)
+
+	if line := alsoLine(result.Candidates); line != "" {
+		text += line
+	}
+
+	text += "Next: " + result.Next + "\n"
+
+	if result.Caveat != "" {
+		text += "Caveat: " + result.Caveat + "\n"
+	}
+
+	return text
+}
+
+// alsoLine lists the runners-up on one line, so the suggestion stays first.
+func alsoLine(candidates []Choice) string {
+	if len(candidates) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(candidates))
+
+	for _, choice := range candidates {
+		parts = append(parts, fmt.Sprintf(
+			"%s%s (%s)", choice.Function, sourcePosition(choice.File, choice.Line), choice.Classification,
+		))
+	}
+
+	return "Also: " + strings.Join(parts, ", ") + "\n"
 }
 
 // signalParts lists the classification and every signal that has a value.
 func signalParts(result Result) []string {
 	parts := []string{result.Classification}
-
-	if result.CPU.FlatPct > 0 || result.CPU.CumPct > 0 {
-		parts = append(parts, fmt.Sprintf("cpu flat %.1f%%, cpu cum %.1f%%", result.CPU.FlatPct, result.CPU.CumPct))
-	}
-
-	if result.Alloc.FlatPct > 0 || result.Alloc.CumPct > 0 {
-		parts = append(parts, fmt.Sprintf("alloc flat %.1f%%, alloc cum %.1f%%", result.Alloc.FlatPct, result.Alloc.CumPct))
-	}
+	parts = appendMetricPart(parts, "cpu", result.CPU)
+	parts = appendMetricPart(parts, "alloc bytes", result.AllocBytes)
+	parts = appendMetricPart(parts, "alloc objects", result.AllocObjects)
+	parts = appendMetricPart(parts, "retained", result.Retained)
 
 	if result.Complexity.Cyclomatic > 0 || result.Complexity.Cognitive > 0 {
 		parts = append(parts, fmt.Sprintf(
@@ -183,14 +200,22 @@ func signalParts(result Result) []string {
 	return parts
 }
 
+func appendMetricPart(parts []string, label string, metric Metric) []string {
+	if metric.FlatPct <= 0 && metric.CumPct <= 0 {
+		return parts
+	}
+
+	return append(parts, fmt.Sprintf("%s flat %.1f%%, %s cum %.1f%%", label, metric.FlatPct, label, metric.CumPct))
+}
+
 // sourcePosition renders " at file:line" when the static pass located the
 // function, and nothing otherwise.
-func sourcePosition(result Result) string {
-	if result.File == "" || result.Line <= 0 {
+func sourcePosition(file string, line int) string {
+	if file == "" || line <= 0 {
 		return ""
 	}
 
-	return fmt.Sprintf(" at %s:%d", result.File, result.Line)
+	return fmt.Sprintf(" at %s:%d", file, line)
 }
 
 func withCaveat(text string, caveat string) string {
@@ -201,6 +226,21 @@ func withCaveat(text string, caveat string) string {
 	return text + "Caveat: " + caveat + "\n"
 }
 
-func zeroMetric() Metric {
-	return Metric{FlatMS: 0, FlatBytes: 0, FlatPct: 0, CumMS: 0, CumBytes: 0, CumPct: 0}
+// withFastCaveat records that --fast lowered the CPU accuracy of the report.
+func withFastCaveat(result Result, opts options) Result {
+	if !opts.fast {
+		return result
+	}
+
+	result.Caveat = appendCaveat(result.Caveat, fastCaveat)
+
+	return result
+}
+
+func metricOf(row pprofRow, unit string) Metric {
+	return Metric{Unit: unit, Flat: row.Flat, FlatPct: row.FlatPct, Cum: row.Cum, CumPct: row.CumPct}
+}
+
+func zeroMetric(unit string) Metric {
+	return Metric{Unit: unit, Flat: 0, FlatPct: 0, Cum: 0, CumPct: 0}
 }

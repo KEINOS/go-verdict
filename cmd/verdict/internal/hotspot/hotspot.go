@@ -31,6 +31,7 @@ const (
 	defaultBench     = "."
 	defaultBenchtime = "1s"
 	defaultCount     = 1
+	defaultTop       = 3
 	defaultFormat    = "text"
 	formatJSON       = "json"
 	defaultPrefixCap = 2
@@ -45,6 +46,7 @@ var (
 
 	errInvalidBenchtime = errors.New("benchtime must be a Go benchmark duration or iteration count")
 	errInvalidCount     = errors.New("count must be at least 1")
+	errInvalidTop       = errors.New("top must be at least 1")
 	errInvalidFormat    = errors.New("format must be text or json")
 	errMissingPackage   = errors.New("hotspot requires exactly one package")
 	errMultiplePackages = errors.New("hotspot supports exactly one package, not a multi-package pattern")
@@ -74,6 +76,7 @@ type options struct {
 	format    string
 	pkg       string
 	count     int
+	top       int
 	fast      bool
 }
 
@@ -315,7 +318,7 @@ func (command Command) scoutInTempDir(
 	}
 
 	if !benchmarked {
-		return withoutBenchmark(result, static), nil
+		return withoutBenchmark(result, static, opts.top), nil
 	}
 
 	profiles, err := command.readProfiles(binaryPath, cpuPath, memPath)
@@ -323,7 +326,7 @@ func (command Command) scoutInTempDir(
 		return Result{}, err
 	}
 
-	return classify(result, userProfiles(profiles, pkgInfo.userPrefixes()), static), nil
+	return classify(result, userProfiles(profiles, pkgInfo.userPrefixes()), static, opts.top), nil
 }
 
 // staticComplexity scores every function the module declares, so a measured
@@ -445,6 +448,8 @@ Options:
       Benchmark run count. Default: 1.
   --format text|json
       Output format. Default: text.
+  --top n
+      Number of candidates to report. Default: 3.
   --fast
       Profile CPU and memory in one benchmark pass instead of two.
       Halves the run time and lowers CPU accuracy.
@@ -466,6 +471,7 @@ func parseArgs(args []string) (options, error) {
 		bench:     defaultBench,
 		benchtime: defaultBenchtime,
 		count:     defaultCount,
+		top:       defaultTop,
 		format:    defaultFormat,
 		pkg:       "",
 		fast:      false,
@@ -476,6 +482,7 @@ func parseArgs(args []string) (options, error) {
 	flags.StringVar(&opts.benchtime, "benchtime", opts.benchtime, "benchmark duration or Nx count")
 	flags.IntVar(&opts.count, "count", opts.count, "benchmark run count")
 	flags.StringVar(&opts.format, "format", opts.format, "output format: text or json")
+	flags.IntVar(&opts.top, "top", opts.top, "number of candidates to report")
 	flags.BoolVar(&opts.fast, "fast", opts.fast, "profile CPU and memory in one pass instead of two")
 
 	err := flags.Parse(args)
@@ -491,6 +498,10 @@ func parseArgs(args []string) (options, error) {
 
 	if opts.count < 1 {
 		return options{}, errInvalidCount
+	}
+
+	if opts.top < 1 {
+		return options{}, errInvalidTop
 	}
 
 	if !validBenchtime(opts.benchtime) {

@@ -107,6 +107,16 @@ func staticKey(function string) string {
 	return closureSuffix.ReplaceAllString(shapeSuffix.ReplaceAllString(function, ""), "")
 }
 
+// emptyProfiles is the profile set of a run that produced no measurements.
+func emptyProfiles() profileSet {
+	return profileSet{
+		CPU:          map[string]pprofRow{},
+		Alloc:        map[string]pprofRow{},
+		AllocObjects: map[string]pprofRow{},
+		Inuse:        map[string]pprofRow{},
+	}
+}
+
 // userProfiles keeps only the rows that belong to the user's own module.
 func userProfiles(profiles profileSet, prefixes []string) profileSet {
 	return profileSet{

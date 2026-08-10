@@ -28,7 +28,7 @@ func TestPprofInvocationSelectsProfileKind(t *testing.T) {
 		wantArg string
 		kind    profileKind
 	}{
-		{name: "cpu", kind: profileCPU, wantArg: ""},
+		{name: signalCPU, kind: profileCPU, wantArg: ""},
 		{name: "allocated bytes", kind: profileAlloc, wantArg: "-alloc_space"},
 		{name: "allocated objects", kind: profileAllocObjects, wantArg: "-alloc_objects"},
 		{name: "retained bytes", kind: profileInuse, wantArg: "-inuse_space"},

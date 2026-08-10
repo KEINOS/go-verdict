@@ -12,7 +12,7 @@ import (
 
 	"github.com/KEINOS/go-verdict/verdict/internal/benchparser"
 	"github.com/KEINOS/go-verdict/verdict/internal/benchparser/rawbench"
-	"github.com/KEINOS/go-verdict/verdict/internal/pareto"
+	"github.com/KEINOS/go-verdict/internal/pareto"
 	"github.com/stretchr/testify/require"
 )
 

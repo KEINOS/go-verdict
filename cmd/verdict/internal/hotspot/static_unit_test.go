@@ -12,61 +12,60 @@ import (
 	"github.com/KEINOS/go-verdict/cmd/verdict/internal/complexity"
 )
 
-func TestTopComplexityRanksAndScopesCandidates(t *testing.T) {
+func TestComplexityOnlyRanksAndScopesCandidates(t *testing.T) {
 	t.Parallel()
 
-	static := map[string]complexity.Stat{
-		testWorkFunc:   statOf(testWorkFunc, 12, 20),
-		testAllocFunc:  statOf(testAllocFunc, 30, 16),
-		testRetainFunc: statOf(testRetainFunc, 2, 3),
+	got := classify(testResult(), emptyProfiles(), map[string]complexity.Stat{
+		testWorkFunc:                     statOf(testWorkFunc, 12, 20),
+		testAllocFunc:                    statOf(testAllocFunc, 30, 16),
+		testRetainFunc:                   statOf(testRetainFunc, 2, 3),
 		"example.com/project/other.Huge": statOf("example.com/project/other.Huge", 99, 99),
+	}, defaultTop)
+
+	require.Equal(t, classComplexityHotspot, got.Classification)
+	require.Equal(t, testAllocFunc, got.Function, "the highest normalized score wins")
+	require.Contains(t, got.Caveat, "static estimate")
+
+	for _, choice := range got.Candidates {
+		require.NotEqual(t, testRetainFunc, choice.Function, "code below both thresholds is not a candidate")
+		require.NotEqual(t, "example.com/project/other.Huge", choice.Function,
+			"only the target package can qualify on complexity alone")
 	}
-
-	got, ok := topComplexity(static, testImportPath)
-	require.True(t, ok)
-	require.Equal(t, testAllocFunc, got.Symbol, "the highest normalized score wins")
-
-	_, ok = topComplexity(map[string]complexity.Stat{
-		testRetainFunc: statOf(testRetainFunc, 2, 3),
-	}, testImportPath)
-	require.False(t, ok, "code below both thresholds is not worth suggesting")
-
-	_, ok = topComplexity(static, "")
-	require.False(t, ok, "without an import path there is no package to scope to")
 }
 
-func TestTopComplexityBreaksTiesBySymbol(t *testing.T) {
+func TestComplexityOnlyBreaksTiesBySymbol(t *testing.T) {
 	t.Parallel()
 
 	first := testImportPath + ".Alfa"
 	second := testImportPath + ".Beta"
 
-	got, ok := topComplexity(map[string]complexity.Stat{
+	got := classify(testResult(), emptyProfiles(), map[string]complexity.Stat{
 		second: statOf(second, 20, 30),
 		first:  statOf(first, 20, 30),
-	}, testImportPath)
-	require.True(t, ok)
-	require.Equal(t, first, got.Symbol)
+	}, defaultTop)
+
+	require.Equal(t, first, got.Function)
 }
 
 func TestWithoutBenchmarkKeepsTheBootstrapAdviceWithoutStatic(t *testing.T) {
 	t.Parallel()
 
-	got := withoutBenchmark(testResult(), nil)
+	got := withoutBenchmark(testResult(), nil, defaultTop)
 	require.Equal(t, classNoBenchmark, got.Classification)
 	require.Contains(t, got.Caveat, "verdict help bootstrap")
 	require.Empty(t, got.Function)
 }
 
-func TestWithoutProfileHotspotFallsBackToStatic(t *testing.T) {
+func TestWithoutBenchmarkFallsBackToStatic(t *testing.T) {
 	t.Parallel()
 
-	got := withoutProfileHotspot(testResult(), map[string]complexity.Stat{
+	got := withoutBenchmark(testResult(), map[string]complexity.Stat{
 		testWorkFunc: statOf(testWorkFunc, 12, 20),
-	})
+	}, defaultTop)
 	require.Equal(t, classComplexityHotspot, got.Classification)
 	require.Equal(t, testWorkFunc, got.Function)
 	require.Contains(t, got.Caveat, "static estimate")
+	require.Contains(t, got.Caveat, "verdict help bootstrap")
 }
 
 func TestStaticComplexityReportsFailures(t *testing.T) {

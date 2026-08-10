@@ -1,0 +1,203 @@
+package hotspot
+
+// This file covers candidate fusion and the Pareto ranking that decides which
+// function the report suggests first.
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/KEINOS/go-verdict/cmd/verdict/internal/complexity"
+)
+
+func TestClassifyPrefersHotAndComplex(t *testing.T) {
+	t.Parallel()
+
+	got := classify(testResult(), profileSet{
+		CPU: map[string]pprofRow{
+			testWorkFunc:  row(testWorkFunc, 20, 30),
+			testMixedFunc: row(testMixedFunc, 40, 60),
+		},
+		Alloc:        map[string]pprofRow{},
+		AllocObjects: map[string]pprofRow{},
+		Inuse:        map[string]pprofRow{},
+	}, map[string]complexity.Stat{
+		testWorkFunc: statOf(testWorkFunc, 24, 31),
+	}, defaultTop)
+
+	require.Equal(t, classHotAndComplex, got.Classification)
+	require.Equal(t, testWorkFunc, got.Function,
+		"a function that is hot and complex outranks one that is only hotter")
+	require.Equal(t, []string{"cpu", "complexity"}, got.Signals)
+	require.Len(t, got.Candidates, 1)
+	require.Equal(t, testMixedFunc, got.Candidates[0].Function)
+}
+
+func TestClassifyNamesEachMemorySignal(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		profiles profileSet
+		name     string
+		want     string
+	}{
+		{
+			name:     "allocated bytes",
+			want:     classAllocHotspot,
+			profiles: memoryProfiles(rowsOf(testAllocFunc, 30, 40), zeroRows(), zeroRows()),
+		},
+		{
+			name:     "allocation count",
+			want:     classAllocRateHotspot,
+			profiles: memoryProfiles(zeroRows(), rowsOf(testAllocFunc, 30, 40), zeroRows()),
+		},
+		{
+			name:     "retained heap",
+			want:     classRetentionHotspot,
+			profiles: memoryProfiles(zeroRows(), zeroRows(), rowsOf(testRetainFunc, 30, 40)),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := classify(testResult(), test.profiles, nil, defaultTop)
+			require.Equal(t, test.want, got.Classification)
+		})
+	}
+}
+
+func TestClassifyKeepsParetoOptimalCandidatesFirst(t *testing.T) {
+	t.Parallel()
+
+	// Beta is worse than Alfa on every signal, so Alfa dominates it and drops
+	// behind the front. Gamma wins on allocations alone, so nothing dominates
+	// it, and its stronger single signal puts it first.
+	got := classify(testResult(), profileSet{
+		CPU: map[string]pprofRow{
+			testImportPath + ".Alfa": row(testImportPath+".Alfa", 40, 60),
+			testImportPath + ".Beta": row(testImportPath+".Beta", 20, 30),
+		},
+		Alloc: map[string]pprofRow{
+			testImportPath + ".Gamma": row(testImportPath+".Gamma", 50, 70),
+		},
+		AllocObjects: map[string]pprofRow{},
+		Inuse:        map[string]pprofRow{},
+	}, nil, defaultTop)
+
+	require.Equal(t, testImportPath+".Gamma", got.Function)
+	require.Len(t, got.Candidates, 2)
+	require.Equal(t, testImportPath+".Alfa", got.Candidates[0].Function)
+	require.Equal(t, testImportPath+".Beta", got.Candidates[1].Function,
+		"a dominated candidate ranks below every candidate in the Pareto front")
+}
+
+func TestClassifyRanksMeasuredCostAboveStaticEstimate(t *testing.T) {
+	t.Parallel()
+
+	got := classify(testResult(), profileSet{
+		CPU:          map[string]pprofRow{testWorkFunc: row(testWorkFunc, 20, 30)},
+		Alloc:        map[string]pprofRow{},
+		AllocObjects: map[string]pprofRow{},
+		Inuse:        map[string]pprofRow{},
+	}, map[string]complexity.Stat{
+		testAllocFunc: statOf(testAllocFunc, 90, 90),
+	}, defaultTop)
+
+	require.Equal(t, testWorkFunc, got.Function, "a measured hotspot outranks a static estimate")
+	require.Equal(t, classCPUHotspot, got.Classification)
+	require.Empty(t, got.Caveat, "a measured suggestion needs no static-estimate caveat")
+	require.Len(t, got.Candidates, 1)
+	require.Equal(t, testAllocFunc, got.Candidates[0].Function)
+}
+
+func TestClassifyCapsTheCandidateList(t *testing.T) {
+	t.Parallel()
+
+	profiles := profileSet{
+		CPU: map[string]pprofRow{
+			testImportPath + ".Alfa":  row(testImportPath+".Alfa", 40, 60),
+			testImportPath + ".Beta":  row(testImportPath+".Beta", 30, 50),
+			testImportPath + ".Gamma": row(testImportPath+".Gamma", 20, 40),
+			testImportPath + ".Delta": row(testImportPath+".Delta", 10, 30),
+		},
+		Alloc:        map[string]pprofRow{},
+		AllocObjects: map[string]pprofRow{},
+		Inuse:        map[string]pprofRow{},
+	}
+
+	require.Len(t, classify(testResult(), profiles, nil, defaultTop).Candidates, defaultTop-1)
+	require.Empty(t, classify(testResult(), profiles, nil, 1).Candidates)
+	require.Len(t, classify(testResult(), profiles, nil, 99).Candidates, 3)
+}
+
+func TestClassifyReportsNoClearHotspot(t *testing.T) {
+	t.Parallel()
+
+	got := classify(testResult(), emptyProfiles(), nil, defaultTop)
+
+	require.Equal(t, classNoClearHotspot, got.Classification)
+	require.Contains(t, got.Caveat, "No clear")
+	require.Empty(t, got.Function)
+}
+
+func TestClassifyEnrichesCandidatesFromOtherPackages(t *testing.T) {
+	t.Parallel()
+
+	sibling := "example.com/project/other.Helper"
+
+	got := classify(testResult(), profileSet{
+		CPU:          map[string]pprofRow{sibling: row(sibling, 40, 60)},
+		Alloc:        map[string]pprofRow{},
+		AllocObjects: map[string]pprofRow{},
+		Inuse:        map[string]pprofRow{},
+	}, map[string]complexity.Stat{
+		sibling: statOf(sibling, 40, 40),
+	}, defaultTop)
+
+	require.Equal(t, sibling, got.Function)
+	require.Equal(t, "sample.go", got.File, "a hot function outside the package still gets its position")
+	require.Equal(t, 40, got.Complexity.Cyclomatic)
+	require.Equal(t, classCPUHotspot, got.Classification,
+		"complexity outside the target package never adds a signal")
+}
+
+func TestStaticKeyJoinsGenericAndClosureRows(t *testing.T) {
+	t.Parallel()
+
+	got := classify(testResult(), profileSet{
+		CPU:          map[string]pprofRow{testWorkFunc + ".func1": row(testWorkFunc+".func1", 40, 60)},
+		Alloc:        map[string]pprofRow{},
+		AllocObjects: map[string]pprofRow{},
+		Inuse:        map[string]pprofRow{},
+	}, map[string]complexity.Stat{
+		testWorkFunc: statOf(testWorkFunc, 24, 31),
+	}, defaultTop)
+
+	require.Equal(t, classHotAndComplex, got.Classification,
+		"a closure carries the complexity of the function that declares it")
+	require.Equal(t, "sample.go", got.File)
+}
+
+func row(function string, flatPct float64, cumPct float64) pprofRow {
+	return pprofRow{Function: function, Flat: flatPct, FlatPct: flatPct, Cum: cumPct, CumPct: cumPct}
+}
+
+func rowsOf(function string, flatPct float64, cumPct float64) map[string]pprofRow {
+	return map[string]pprofRow{function: row(function, flatPct, cumPct)}
+}
+
+func zeroRows() map[string]pprofRow {
+	return map[string]pprofRow{}
+}
+
+func memoryProfiles(bytes map[string]pprofRow, objects map[string]pprofRow, retained map[string]pprofRow) profileSet {
+	return profileSet{
+		CPU:          map[string]pprofRow{},
+		Alloc:        bytes,
+		AllocObjects: objects,
+		Inuse:        retained,
+	}
+}
