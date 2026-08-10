@@ -69,6 +69,7 @@ type options struct {
 	format    string
 	pkg       string
 	count     int
+	fast      bool
 }
 
 type packageInfo struct {
@@ -177,7 +178,12 @@ func (command Command) readProfiles(binaryPath string, cpuPath string, memPath s
 		return profileSet{}, fmt.Errorf("parsing allocation profile: %w", err)
 	}
 
-	return profileSet{CPU: rowsByFunction(cpuRows), Alloc: rowsByFunction(allocRows)}, nil
+	return profileSet{
+		CPU:          rowsByFunction(cpuRows),
+		Alloc:        rowsByFunction(allocRows),
+		AllocObjects: nil,
+		Inuse:        nil,
+	}, nil
 }
 
 func (command Command) resolvePackage(pkg string) (packageInfo, error) {
@@ -254,8 +260,10 @@ func (command Command) scout(opts options) (Result, error) {
 	}
 
 	return classify(result, profileSet{
-		CPU:   userRows(profiles.CPU, pkgInfo.userPrefixes()),
-		Alloc: userRows(profiles.Alloc, pkgInfo.userPrefixes()),
+		CPU:          userRows(profiles.CPU, pkgInfo.userPrefixes()),
+		Alloc:        userRows(profiles.Alloc, pkgInfo.userPrefixes()),
+		AllocObjects: userRows(profiles.AllocObjects, pkgInfo.userPrefixes()),
+		Inuse:        userRows(profiles.Inuse, pkgInfo.userPrefixes()),
 	}), nil
 }
 
@@ -322,7 +330,14 @@ func isHelpRequest(args []string) bool {
 }
 
 func parseArgs(args []string) (options, error) {
-	opts := options{bench: defaultBench, benchtime: defaultBenchtime, count: defaultCount, format: defaultFormat, pkg: ""}
+	opts := options{
+		bench:     defaultBench,
+		benchtime: defaultBenchtime,
+		count:     defaultCount,
+		format:    defaultFormat,
+		pkg:       "",
+		fast:      false,
+	}
 	flags := flag.NewFlagSet("verdict hotspot", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&opts.bench, "bench", opts.bench, "benchmark regexp")

@@ -16,48 +16,14 @@ const (
 	testModulePath = "example.com/project"
 	testMixedFunc  = "example.com/project/pkg.Mixed"
 	testWorkFunc   = "example.com/project/pkg.Work"
+	testAllocFunc  = "example.com/project/pkg.Alloc"
+	testRetainFunc = "example.com/project/pkg.Retain"
 )
 
 func TestParseArgsValidation(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		wantErr error
-		name    string
-		want    options
-		args    []string
-	}{
-		{
-			name: "defaults",
-			args: []string{testPkgArg},
-			want: options{
-				bench:     defaultBench,
-				benchtime: defaultBenchtime,
-				count:     defaultCount,
-				format:    defaultFormat,
-				pkg:       testPkgArg,
-			},
-			wantErr: nil,
-		},
-		{
-			name: "custom values",
-			args: []string{"--bench", "BenchmarkFoo", "--benchtime", "25x", "--count", "3", "--format", "json", testPkgArg},
-			want: options{bench: "BenchmarkFoo", benchtime: "25x", count: 3, format: formatJSON, pkg: testPkgArg},
-			wantErr: nil,
-		},
-		{name: "missing package", args: nil, want: zeroOptions(), wantErr: errMissingPackage},
-		{name: "extra package", args: []string{"./a", "./b"}, want: zeroOptions(), wantErr: errMissingPackage},
-		{name: "bad count", args: []string{"--count", "0", testPkgArg}, want: zeroOptions(), wantErr: errInvalidCount},
-		{
-			name:    "bad benchtime",
-			args:    []string{"--benchtime", "zero", testPkgArg},
-			want:    zeroOptions(),
-			wantErr: errInvalidBenchtime,
-		},
-		{name: "bad format", args: []string{"--format", "yaml", testPkgArg}, want: zeroOptions(), wantErr: errInvalidFormat},
-	}
-
-	for _, test := range tests {
+	for _, test := range parseArgsCases() {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -72,6 +38,71 @@ func TestParseArgsValidation(t *testing.T) {
 			require.Equal(t, test.want, got)
 		})
 	}
+}
+
+type parseArgsCase struct {
+	wantErr error
+	name    string
+	want    options
+	args    []string
+}
+
+func parseArgsCases() []parseArgsCase {
+	return []parseArgsCase{
+		{
+			name:    "defaults",
+			args:    []string{testPkgArg},
+			want:    defaultOptions(testPkgArg),
+			wantErr: nil,
+		},
+		{
+			name: "custom values",
+			args: []string{"--bench", "BenchmarkFoo", "--benchtime", "25x", "--count", "3", "--format", "json", testPkgArg},
+			want: options{
+				bench:     "BenchmarkFoo",
+				benchtime: "25x",
+				count:     3,
+				format:    formatJSON,
+				pkg:       testPkgArg,
+				fast:      false,
+			},
+			wantErr: nil,
+		},
+		{
+			name:    "fast single pass",
+			args:    []string{"--fast", testPkgArg},
+			want:    fastOptions(testPkgArg),
+			wantErr: nil,
+		},
+		{name: "missing package", args: nil, want: zeroOptions(), wantErr: errMissingPackage},
+		{name: "extra package", args: []string{"./a", "./b"}, want: zeroOptions(), wantErr: errMissingPackage},
+		{name: "bad count", args: []string{"--count", "0", testPkgArg}, want: zeroOptions(), wantErr: errInvalidCount},
+		{
+			name:    "bad benchtime",
+			args:    []string{"--benchtime", "zero", testPkgArg},
+			want:    zeroOptions(),
+			wantErr: errInvalidBenchtime,
+		},
+		{name: "bad format", args: []string{"--format", "yaml", testPkgArg}, want: zeroOptions(), wantErr: errInvalidFormat},
+	}
+}
+
+func defaultOptions(pkg string) options {
+	return options{
+		bench:     defaultBench,
+		benchtime: defaultBenchtime,
+		count:     defaultCount,
+		format:    defaultFormat,
+		pkg:       pkg,
+		fast:      false,
+	}
+}
+
+func fastOptions(pkg string) options {
+	opts := defaultOptions(pkg)
+	opts.fast = true
+
+	return opts
 }
 
 func TestParseTopNormalizesAndConvertsUnits(t *testing.T) {
@@ -165,12 +196,14 @@ func TestClassifyMixedAndTieBreaking(t *testing.T) {
 
 	got := classify(base, profileSet{
 		CPU: map[string]pprofRow{
-			testMixedFunc:                  {Function: testMixedFunc, Flat: 10, FlatPct: 10, Cum: 20, CumPct: 20},
+			testMixedFunc:                 {Function: testMixedFunc, Flat: 10, FlatPct: 10, Cum: 20, CumPct: 20},
 			"example.com/project/pkg.CPU": {Function: "example.com/project/pkg.CPU", Flat: 50, FlatPct: 50, Cum: 50, CumPct: 50},
 		},
 		Alloc: map[string]pprofRow{
 			testMixedFunc: {Function: testMixedFunc, Flat: bytesPerKB, FlatPct: 10, Cum: bytesPerKB, CumPct: 10},
 		},
+		AllocObjects: nil,
+		Inuse:        nil,
 	})
 	require.Equal(t, classMixedHotspot, got.Classification)
 	require.Equal(t, testMixedFunc, got.Function)
@@ -182,14 +215,10 @@ func TestClassifyMixedAndTieBreaking(t *testing.T) {
 			"example.com/project/pkg.Alfa": {Function: "example.com/project/pkg.Alfa", Flat: 0, FlatPct: 10, Cum: 0, CumPct: 10},
 		},
 		Alloc: map[string]pprofRow{
-			"example.com/project/pkg.Alloc": {
-				Function: "example.com/project/pkg.Alloc",
-				Flat:     0,
-				FlatPct:  60,
-				Cum:      0,
-				CumPct:   60,
-			},
+			testAllocFunc: {Function: testAllocFunc, Flat: 0, FlatPct: 60, Cum: 0, CumPct: 60},
 		},
+		AllocObjects: nil,
+		Inuse:        nil,
 	})
 	require.Equal(t, classCPUHotspot, got.Classification)
 	require.Equal(t, "example.com/project/pkg.Alfa", got.Function)
@@ -213,7 +242,12 @@ func TestClassifyNoClear(t *testing.T) {
 		Secondary:      nil,
 		Caveat:         "",
 		Next:           "next",
-	}, profileSet{CPU: map[string]pprofRow{}, Alloc: map[string]pprofRow{}})
+	}, profileSet{
+		CPU:          map[string]pprofRow{},
+		Alloc:        map[string]pprofRow{},
+		AllocObjects: map[string]pprofRow{},
+		Inuse:        map[string]pprofRow{},
+	})
 
 	require.Equal(t, classNoClearHotspot, got.Classification)
 	require.Contains(t, got.Caveat, "No clear")
@@ -258,24 +292,18 @@ func TestCommandRunSuccessNoBenchmarkAndErrors(t *testing.T) {
 		t.Parallel()
 
 		runner := newFakeRunner()
-		runner.outputs = []fakeOutput{
-			{out: goListJSON(testImportPath, "/repo/pkg"), err: nil},
-			{out: []byte("compiled"), err: nil},
-			{out: []byte("BenchmarkWork-10 1 100 ns/op\nPASS\n"), err: nil},
-			{out: []byte(cpuTop("example.com/project/pkg.Work", "20ms", "20.00%", "30ms", "30.00%")), err: nil},
-			{out: []byte(allocTop("example.com/project/pkg.Work", "10kB", "10.00%", "20kB", "20.00%")), err: nil},
-		}
+		runner.outputs = fullRunOutputs()
 
 		var out strings.Builder
 
 		err := (Command{runner: runner}).Run([]string{"--bench", "BenchmarkWork", testPkgArg}, &out)
 		require.NoError(t, err)
 		require.Contains(t, out.String(), classMixedHotspot)
-		require.Len(t, runner.calls, 5)
+		require.Len(t, runner.calls, fullRunCallCount)
 		require.Equal(t, "/repo/pkg", runner.calls[2].Dir)
 		require.Contains(t, runner.calls[2].Args, "-test.bench=BenchmarkWork")
-		require.Contains(t, runner.calls[3].Args, "-nodecount=50")
-		require.Contains(t, runner.calls[4].Args, "-alloc_space")
+		require.Contains(t, runner.calls[4].Args, "-nodecount=50")
+		require.Contains(t, runner.calls[5].Args, "-alloc_space")
 	})
 
 	t.Run("no benchmark", func(t *testing.T) {
@@ -300,12 +328,8 @@ func TestCommandRunSuccessNoBenchmarkAndErrors(t *testing.T) {
 		t.Parallel()
 
 		runner := newFakeRunner()
-		runner.outputs = []fakeOutput{
-			{out: goListJSON(testImportPath, "/repo/pkg"), err: nil},
-			{out: []byte("compiled"), err: nil},
-			{out: []byte("BenchmarkWork-10 1 100 ns/op\nPASS\n"), err: nil},
-			{out: nil, err: errFakeRun},
-		}
+
+		runner.outputs = append(benchmarkRunOutputs(), fakeOutput{out: nil, err: errFakeRun})
 
 		err := (Command{runner: runner}).Run([]string{testPkgArg}, &strings.Builder{})
 		require.ErrorContains(t, err, "reading CPU profile")
@@ -328,13 +352,7 @@ func TestCommandRunInputOutputErrors(t *testing.T) {
 	require.ErrorContains(t, err, "parsing hotspot flags")
 
 	runner := newFakeRunner()
-	runner.outputs = []fakeOutput{
-		{out: goListJSON(testImportPath, "/repo/pkg"), err: nil},
-		{out: []byte("compiled"), err: nil},
-		{out: []byte("BenchmarkWork-10 1 100 ns/op\nPASS\n"), err: nil},
-		{out: []byte(cpuTop("example.com/project/pkg.Work", "20ms", "20.00%", "30ms", "30.00%")), err: nil},
-		{out: []byte(allocTop("example.com/project/pkg.Work", "10kB", "10.00%", "20kB", "20.00%")), err: nil},
-	}
+	runner.outputs = fullRunOutputs()
 
 	err = (Command{runner: runner}).Run([]string{testPkgArg}, failingWriter{})
 	require.ErrorContains(t, err, "writing output")
@@ -390,35 +408,28 @@ func fakeOutputsUntilBenchmarkError() []fakeOutput {
 }
 
 func fakeOutputsUntilAllocProfileError() []fakeOutput {
-	return []fakeOutput{
-		{out: goListJSON(testImportPath, "/repo/pkg"), err: nil},
-		{out: []byte("compiled"), err: nil},
-		{out: []byte("BenchmarkWork-10 1 100 ns/op\nPASS\n"), err: nil},
-		{out: []byte(cpuTop("example.com/project/pkg.Work", "20ms", "20.00%", "30ms", "30.00%")), err: nil},
-		{out: nil, err: errFakeRun},
-	}
+	return append(
+		benchmarkRunOutputs(),
+		fakeOutput{out: []byte(topOutput(testWorkFunc, "20ms", "20.00%", "30ms", "30.00%")), err: nil},
+		fakeOutput{out: nil, err: errFakeRun},
+	)
 }
 
 func fakeOutputsWithMalformedCPUProfile() []fakeOutput {
-	return []fakeOutput{
-		{out: goListJSON(testImportPath, "/repo/pkg"), err: nil},
-		{out: []byte("compiled"), err: nil},
-		{out: []byte("BenchmarkWork-10 1 100 ns/op\nPASS\n"), err: nil},
-		{out: []byte("not pprof"), err: nil},
-		{out: []byte(allocTop("example.com/project/pkg.Work", "10kB", "10.00%", "20kB", "20.00%")), err: nil},
-	}
+	return append(
+		benchmarkRunOutputs(),
+		fakeOutput{out: []byte("not pprof"), err: nil},
+		fakeOutput{out: []byte(topOutput(testWorkFunc, "10kB", "10.00%", "20kB", "20.00%")), err: nil},
+	)
 }
 
 func TestBaseResultFallbackCaveatAndNoClearText(t *testing.T) {
 	t.Parallel()
 
-	result := baseResult(options{
-		bench:     defaultBench,
-		benchtime: defaultBenchtime,
-		count:     defaultCount,
-		format:    defaultFormat,
-		pkg:       testPkgArg,
-	}, packageInfo{ImportPath: testImportPath, Dir: "/repo/pkg", Module: nil})
+	result := baseResult(
+		defaultOptions(testPkgArg),
+		packageInfo{ImportPath: testImportPath, Dir: "/repo/pkg", Module: nil},
+	)
 
 	require.Contains(t, result.Caveat, "Module path was unavailable")
 
@@ -465,7 +476,7 @@ func newFakeRunner() *fakeRunner {
 }
 
 func zeroOptions() options {
-	return options{bench: "", benchtime: "", count: 0, format: "", pkg: ""}
+	return options{bench: "", benchtime: "", count: 0, format: "", pkg: "", fast: false}
 }
 
 func (runner *fakeRunner) Run(command invocation) ([]byte, error) {
@@ -486,12 +497,8 @@ func goListJSON(importPath string, dir string) []byte {
 	)
 }
 
-func cpuTop(function string, flat string, flatPct string, cum string, cumPct string) string {
-	return "      flat  flat%   sum%        cum   cum%\n" +
-		"     " + flat + " " + flatPct + " " + flatPct + " " + cum + " " + cumPct + "  " + function + "\n"
-}
-
-func allocTop(function string, flat string, flatPct string, cum string, cumPct string) string {
+// topOutput builds one "go tool pprof -top" row for any profile kind.
+func topOutput(function string, flat string, flatPct string, cum string, cumPct string) string {
 	return "      flat  flat%   sum%        cum   cum%\n" +
 		"     " + flat + " " + flatPct + " " + flatPct + " " + cum + " " + cumPct + "  " + function + "\n"
 }

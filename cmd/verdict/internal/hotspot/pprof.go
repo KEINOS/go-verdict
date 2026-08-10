@@ -29,6 +29,8 @@ type profileKind int
 const (
 	profileCPU profileKind = iota
 	profileAlloc
+	profileAllocObjects
+	profileInuse
 )
 
 type pprofRow struct {
@@ -40,8 +42,10 @@ type pprofRow struct {
 }
 
 type profileSet struct {
-	CPU   map[string]pprofRow
-	Alloc map[string]pprofRow
+	CPU          map[string]pprofRow
+	Alloc        map[string]pprofRow
+	AllocObjects map[string]pprofRow
+	Inuse        map[string]pprofRow
 }
 
 func mergeRows(left pprofRow, right pprofRow) pprofRow {
@@ -183,6 +187,8 @@ func parseValue(value string, kind profileKind) (float64, bool) {
 		return parseCPUValue(value)
 	case profileAlloc:
 		return parseByteValue(value)
+	case profileAllocObjects, profileInuse:
+		return 0, false
 	default:
 		return 0, false
 	}

@@ -174,6 +174,8 @@ func meetsThreshold(row pprofRow, kind profileKind) bool {
 		return row.FlatPct >= cpuFlatThreshold || row.CumPct >= cpuCumThreshold
 	case profileAlloc:
 		return row.FlatPct >= allocFlatThreshold || row.CumPct >= allocCumThreshold
+	case profileAllocObjects, profileInuse:
+		return false
 	default:
 		return false
 	}
