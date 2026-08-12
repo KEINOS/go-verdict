@@ -184,9 +184,14 @@ func (command Command) compileBenchmark(binaryPath string, pkg string) (bool, er
 		return false, fmt.Errorf("compiling benchmark binary: %w", err)
 	}
 
+	// Check for binary at the requested path
 	_, err = command.statFile(binaryPath)
 	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
+		// On Windows, go test -c -o <name> produces <name>.exe, so check for that
+		_, err = command.statFile(binaryPath + ".exe")
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
 	}
 
 	if err != nil {

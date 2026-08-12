@@ -73,11 +73,17 @@ func Test_runTestScenarioWithFakeBinary(t *testing.T) {
 				Want: Want{
 					ExitCode: 0,
 					Stdout: TextAssert{
-						Equals:   nil,
-						Contains: []string{"args:", "stdin:fixture input"}, NotContains: nil,
-						Matches:  nil,
+						Equals:      nil,
+						Contains:    []string{"args:", "stdin:fixture input"},
+						NotContains: nil,
+						Matches:     nil,
 					},
-					Stderr: TextAssert{Equals: &emptyStderr, Contains: nil, NotContains: nil, Matches: nil},
+					Stderr: TextAssert{
+						Equals:      &emptyStderr,
+						Contains:    nil,
+						NotContains: nil,
+						Matches:     nil,
+					},
 				},
 			},
 			{
