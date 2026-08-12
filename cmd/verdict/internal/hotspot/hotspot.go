@@ -121,7 +121,7 @@ func osTempDir() (string, error) {
 }
 
 // osTempDirWithMaker creates a temporary directory using the provided maker function.
-// This function is exported for testing error paths.
+// This helper is injectable for testing error paths.
 func osTempDirWithMaker(maker func(string, string) (string, error)) (string, error) {
 	dir, err := maker("", "verdict-hotspot-*")
 	if err != nil {
