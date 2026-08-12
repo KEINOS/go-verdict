@@ -610,6 +610,10 @@ func TestCompileBenchmarkResolvesWindowsExeBinary(t *testing.T) {
 func TestScoutInTempDirUsesResolvedWindowsExeBinary(t *testing.T) {
 	t.Parallel()
 
+	tempDir := t.TempDir()
+	binaryPath := filepath.Join(tempDir, "hotspot.test")
+	windowsBinaryPath := binaryPath + ".exe"
+
 	runner := newFakeRunner()
 
 	runner.outputs = append(
@@ -625,19 +629,19 @@ func TestScoutInTempDirUsesResolvedWindowsExeBinary(t *testing.T) {
 		runner: runner,
 		statFile: func(path string) (os.FileInfo, error) {
 			switch path {
-			case "/tmp/hotspot.test":
+			case binaryPath:
 				return nil, os.ErrNotExist
-			case "/tmp/hotspot.test.exe":
+			case windowsBinaryPath:
 				return fakeFileInfo{name: path}, nil
 			default:
 				return nil, os.ErrNotExist
 			}
 		},
-		tempDir: func() (string, error) { return "/tmp", nil },
+		tempDir: func() (string, error) { return tempDir, nil },
 	}
 
 	_, err := command.scoutInTempDir(
-		"/tmp",
+		tempDir,
 		defaultOptions(testPkgArg),
 		packageInfo{
 			Dir:        testPkgDir,
@@ -659,9 +663,9 @@ func TestScoutInTempDirUsesResolvedWindowsExeBinary(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, runner.calls, 7)
-	require.Equal(t, "/tmp/hotspot.test.exe", runner.calls[1].Name)
-	require.Equal(t, "/tmp/hotspot.test.exe", runner.calls[2].Name)
-	require.Contains(t, strings.Join(runner.calls[3].Args, " "), "/tmp/hotspot.test.exe")
+	require.Equal(t, windowsBinaryPath, runner.calls[1].Name)
+	require.Equal(t, windowsBinaryPath, runner.calls[2].Name)
+	require.Contains(t, strings.Join(runner.calls[3].Args, " "), windowsBinaryPath)
 }
 
 func TestExecRunnerRunsAndReportsRealProcesses(t *testing.T) {
