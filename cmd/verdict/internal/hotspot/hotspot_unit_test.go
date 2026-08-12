@@ -24,6 +24,7 @@ const (
 	testSampleDir  = "testdata/sample"
 	testFlagFormat = "--format"
 	testFlagFast   = "--fast"
+	testFlagBench  = "--bench"
 	testSampleFile = "sample.go"
 )
 
@@ -64,7 +65,10 @@ func parseArgsCases() []parseArgsCase {
 		},
 		{
 			name: "custom values",
-			args: []string{"--bench", "BenchmarkFoo", "--benchtime", "25x", "--count", "3", testFlagFormat, "json", testPkgArg},
+			args: []string{
+				testFlagBench, "BenchmarkFoo", "--benchtime", "25x",
+				"--count", "3", testFlagFormat, "json", testPkgArg,
+			},
 			want: options{
 				bench:     "BenchmarkFoo",
 				benchtime: "25x",
@@ -211,9 +215,33 @@ func TestFormatResultTextAndJSON(t *testing.T) {
 	require.ErrorIs(t, err, errInvalidFormat)
 }
 
-func TestCommandRunSuccessNoBenchmarkAndErrors(t *testing.T) {
-	t.Parallel()
+// TestFormatResultReportsJSONMarshalError verifies JSON marshaling errors are handled.
+//
+//nolint:paralleltest // Not parallel because it modifies global marshalFunc
+func TestFormatResultReportsJSONMarshalError(t *testing.T) {
+	// Save original and restore after test
+	originalMarshal := marshalFunc
 
+	t.Cleanup(func() { marshalFunc = originalMarshal })
+
+	// Inject a marshaler that always fails
+	//nolint:err113 // test errors are fine to create dynamically
+	fakeErr := errors.New("test marshal error")
+	marshalFunc = func(any, string, string) ([]byte, error) {
+		return nil, fakeErr
+	}
+
+	result := testResult()
+	text, err := formatResult(result, formatJSON)
+	require.Empty(t, text)
+	require.Error(t, err)
+	require.ErrorIs(t, err, fakeErr)
+	require.ErrorContains(t, err, "formatting hotspot json")
+}
+
+//nolint:tparallel // Parent is not parallel because a subtest modifies global marshalFunc
+func TestCommandRunSuccessNoBenchmarkAndErrors(t *testing.T) {
+	// Not parallel because a subtest modifies global marshalFunc
 	t.Run("success", func(t *testing.T) {
 		t.Parallel()
 
@@ -222,7 +250,7 @@ func TestCommandRunSuccessNoBenchmarkAndErrors(t *testing.T) {
 
 		var out strings.Builder
 
-		err := newCommand(t, runner).Run([]string{"--bench", "BenchmarkWork", testPkgArg}, &out)
+		err := newCommand(t, runner).Run([]string{testFlagBench, "BenchmarkWork", testPkgArg}, &out)
 		require.NoError(t, err)
 		require.Contains(t, out.String(), classHotAndComplex, "Work is hot in CPU and allocations and is complex")
 		require.Len(t, runner.calls, fullRunCallCount)
@@ -253,6 +281,29 @@ func TestCommandRunSuccessNoBenchmarkAndErrors(t *testing.T) {
 
 		err := newCommand(t, runner).Run([]string{testPkgArg}, &strings.Builder{})
 		require.ErrorContains(t, err, "reading CPU profile")
+	})
+
+	//nolint:paralleltest // Not parallel because it modifies global marshalFunc
+	t.Run("format result error", func(t *testing.T) {
+		// Save and restore marshalFunc
+		originalMarshal := marshalFunc
+
+		t.Cleanup(func() { marshalFunc = originalMarshal })
+
+		runner := newFakeRunner()
+		runner.outputs = fullRunOutputs()
+
+		// Inject marshal error
+		//nolint:err113 // test errors are fine to create dynamically
+		fakeErr := errors.New("test format error")
+		marshalFunc = func(any, string, string) ([]byte, error) {
+			return nil, fakeErr
+		}
+
+		args := []string{"-format", "json", testFlagBench, "BenchmarkWork", testPkgArg}
+		err := newCommand(t, runner).Run(args, &strings.Builder{})
+		require.ErrorContains(t, err, "formatting hotspot json")
+		require.ErrorIs(t, err, fakeErr)
 	})
 }
 
@@ -525,4 +576,25 @@ func TestExecRunnerRunsAndReportsRealProcesses(t *testing.T) {
 	_, err = execRunner{}.Run(invocation{Dir: "", Name: "verdict-no-such-binary", Args: nil})
 	require.Error(t, err)
 	require.ErrorContains(t, err, "verdict-no-such-binary")
+}
+
+//nolint:paralleltest // Not parallel because it modifies global mkDirTempFunc
+func TestOsTempDirReportsMkDirTempError(t *testing.T) {
+	// Save original and restore after test
+	originalMaker := mkDirTempFunc
+
+	t.Cleanup(func() { mkDirTempFunc = originalMaker })
+
+	// Inject a maker that always fails
+	//nolint:err113 // test errors are fine to create dynamically
+	fakeErr := errors.New("test mkdir error")
+	mkDirTempFunc = func(string, string) (string, error) {
+		return "", fakeErr
+	}
+
+	dir, err := osTempDir()
+	require.Empty(t, dir)
+	require.Error(t, err)
+	require.ErrorIs(t, err, fakeErr)
+	require.ErrorContains(t, err, "creating hotspot temp dir")
 }

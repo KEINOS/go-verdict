@@ -110,8 +110,19 @@ func New() Command {
 	return Command{runner: execRunner{}, statFile: os.Stat, tempDir: osTempDir}
 }
 
+// mkDirTempFunc is the function that creates temporary directories.
+// It is injectable for testing.
+//nolint:gochecknoglobals // mkDirTempFunc is an injection point for testing
+var mkDirTempFunc = os.MkdirTemp
+
 func osTempDir() (string, error) {
-	dir, err := os.MkdirTemp("", "verdict-hotspot-*")
+	return osTempDirWithMaker(mkDirTempFunc)
+}
+
+// osTempDirWithMaker creates a temporary directory using the provided maker function.
+// This function is exported for testing error paths.
+func osTempDirWithMaker(maker func(string, string) (string, error)) (string, error) {
+	dir, err := maker("", "verdict-hotspot-*")
 	if err != nil {
 		return "", fmt.Errorf("creating hotspot temp dir: %w", err)
 	}

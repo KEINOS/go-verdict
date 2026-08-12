@@ -124,12 +124,17 @@ func baseResult(opts options, pkgInfo packageInfo) Result {
 	return result
 }
 
+// marshalFunc is the function used to marshal results to JSON.
+// It is injectable for testing.
+//nolint:gochecknoglobals // marshalFunc is an injection point for testing
+var marshalFunc = json.MarshalIndent
+
 func formatResult(result Result, format string) (string, error) {
 	switch format {
 	case defaultFormat:
 		return formatText(result), nil
 	case formatJSON:
-		data, err := json.MarshalIndent(result, "", "  ")
+		data, err := marshalFunc(result, "", "  ")
 		if err != nil {
 			return "", fmt.Errorf("formatting hotspot json: %w", err)
 		}
