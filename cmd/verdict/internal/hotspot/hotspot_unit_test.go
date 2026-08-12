@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/KEINOS/go-verdict/cmd/verdict/internal/complexity"
 	"github.com/stretchr/testify/require"
 )
 
@@ -433,6 +435,17 @@ type fakeOutput struct {
 	out []byte
 }
 
+type fakeFileInfo struct {
+	name string
+}
+
+func (f fakeFileInfo) Name() string       { return f.name }
+func (f fakeFileInfo) Size() int64        { return 0 }
+func (f fakeFileInfo) Mode() os.FileMode  { return 0 }
+func (f fakeFileInfo) ModTime() time.Time { return time.Time{} }
+func (f fakeFileInfo) IsDir() bool        { return false }
+func (f fakeFileInfo) Sys() any           { return nil }
+
 type fakeRunner struct {
 	outputs []fakeOutput
 	calls   []invocation
@@ -560,10 +573,95 @@ func TestCompileBenchmarkReportsBinaryInspectionFailure(t *testing.T) {
 		},
 		tempDir: nil,
 	}
-	compiled, err := command.compileBenchmark("hotspot.test", testPkgArg)
+	path, compiled, err := command.compileBenchmark("hotspot.test", testPkgArg)
+	require.Empty(t, path)
 	require.False(t, compiled)
 	require.ErrorIs(t, err, errFakeRun)
 	require.ErrorContains(t, err, "checking benchmark binary")
+}
+
+func TestCompileBenchmarkResolvesWindowsExeBinary(t *testing.T) {
+	t.Parallel()
+
+	runner := newFakeRunner()
+	runner.outputs = []fakeOutput{{out: []byte("compiled"), err: nil}}
+
+	command := Command{
+		runner: runner,
+		statFile: func(path string) (os.FileInfo, error) {
+			switch path {
+			case "hotspot.test":
+				return nil, os.ErrNotExist
+			case "hotspot.test.exe":
+				return fakeFileInfo{name: path}, nil
+			default:
+				return nil, os.ErrNotExist
+			}
+		},
+		tempDir: nil,
+	}
+
+	path, compiled, err := command.compileBenchmark("hotspot.test", testPkgArg)
+	require.NoError(t, err)
+	require.True(t, compiled)
+	require.Equal(t, "hotspot.test.exe", path)
+}
+
+func TestScoutInTempDirUsesResolvedWindowsExeBinary(t *testing.T) {
+	t.Parallel()
+
+	runner := newFakeRunner()
+
+	runner.outputs = append(
+		[]fakeOutput{
+			{out: []byte("compiled"), err: nil},
+			{out: []byte(benchmarkRunLine), err: nil},
+			{out: []byte(benchmarkRunLine), err: nil},
+		},
+		profileTopOutputs()...,
+	)
+
+	command := Command{
+		runner: runner,
+		statFile: func(path string) (os.FileInfo, error) {
+			switch path {
+			case "/tmp/hotspot.test":
+				return nil, os.ErrNotExist
+			case "/tmp/hotspot.test.exe":
+				return fakeFileInfo{name: path}, nil
+			default:
+				return nil, os.ErrNotExist
+			}
+		},
+		tempDir: func() (string, error) { return "/tmp", nil },
+	}
+
+	_, err := command.scoutInTempDir(
+		"/tmp",
+		defaultOptions(testPkgArg),
+		packageInfo{
+			Dir:        testPkgDir,
+			ImportPath: testImportPath,
+			Module:     nil,
+			GoFiles:    nil,
+			CgoFiles:   nil,
+		},
+		map[string]complexity.Stat{
+			testWorkFunc: {
+				ImportPath: testImportPath,
+				Symbol:     testWorkFunc,
+				File:       "work.go",
+				Line:       1,
+				Cyclomatic: 1,
+				Cognitive:  1,
+			},
+		},
+	)
+	require.NoError(t, err)
+	require.Len(t, runner.calls, 7)
+	require.Equal(t, "/tmp/hotspot.test.exe", runner.calls[1].Name)
+	require.Equal(t, "/tmp/hotspot.test.exe", runner.calls[2].Name)
+	require.Contains(t, strings.Join(runner.calls[3].Args, " "), "/tmp/hotspot.test.exe")
 }
 
 func TestExecRunnerRunsAndReportsRealProcesses(t *testing.T) {

@@ -112,6 +112,7 @@ func New() Command {
 
 // mkDirTempFunc is the function that creates temporary directories.
 // It is injectable for testing.
+//
 //nolint:gochecknoglobals // mkDirTempFunc is an injection point for testing
 var mkDirTempFunc = os.MkdirTemp
 
@@ -176,12 +177,12 @@ func (command Command) withDefaults() Command {
 	return command
 }
 
-func (command Command) compileBenchmark(binaryPath string, pkg string) (bool, error) {
+func (command Command) compileBenchmark(binaryPath string, pkg string) (string, bool, error) {
 	command = command.withDefaults()
 
 	_, err := command.runner.Run(invocation{Dir: "", Name: "go", Args: []string{"test", "-c", "-o", binaryPath, pkg}})
 	if err != nil {
-		return false, fmt.Errorf("compiling benchmark binary: %w", err)
+		return "", false, fmt.Errorf("compiling benchmark binary: %w", err)
 	}
 
 	// Check for binary at the requested path
@@ -190,15 +191,19 @@ func (command Command) compileBenchmark(binaryPath string, pkg string) (bool, er
 		// On Windows, go test -c -o <name> produces <name>.exe, so check for that
 		_, err = command.statFile(binaryPath + ".exe")
 		if errors.Is(err, os.ErrNotExist) {
-			return false, nil
+			return "", false, nil
+		}
+
+		if err == nil {
+			return binaryPath + ".exe", true, nil
 		}
 	}
 
 	if err != nil {
-		return false, fmt.Errorf("checking benchmark binary: %w", err)
+		return "", false, fmt.Errorf("checking benchmark binary: %w", err)
 	}
 
-	return true, nil
+	return binaryPath, true, nil
 }
 
 // runBenchmark runs the compiled benchmark binary once. An empty cpuPath or
@@ -376,7 +381,7 @@ func (command Command) scoutInTempDir(
 	cpuPath := filepath.Join(tmpDir, "cpu.out")
 	memPath := filepath.Join(tmpDir, "mem.out")
 
-	compiled, err := command.compileBenchmark(binaryPath, opts.pkg)
+	resolvedBinaryPath, compiled, err := command.compileBenchmark(binaryPath, opts.pkg)
 	if err != nil {
 		return Result{}, err
 	}
@@ -385,7 +390,7 @@ func (command Command) scoutInTempDir(
 		return withoutBenchmark(result, static, opts.top), nil
 	}
 
-	benchmarked, err := command.runProfilingPasses(pkgInfo.Dir, binaryPath, cpuPath, memPath, opts)
+	benchmarked, err := command.runProfilingPasses(pkgInfo.Dir, resolvedBinaryPath, cpuPath, memPath, opts)
 	if err != nil {
 		return Result{}, err
 	}
@@ -394,7 +399,7 @@ func (command Command) scoutInTempDir(
 		return withoutBenchmark(result, static, opts.top), nil
 	}
 
-	profiles, err := command.readProfiles(binaryPath, cpuPath, memPath)
+	profiles, err := command.readProfiles(resolvedBinaryPath, cpuPath, memPath)
 	if err != nil {
 		return Result{}, err
 	}
