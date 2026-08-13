@@ -450,12 +450,16 @@ func (command Command) resolveModuleSources(pkg string, modulePath string) ([]co
 	decoder := json.NewDecoder(bytes.NewReader(output))
 	sources := make([]complexity.Source, 0)
 
-	for decoder.More() {
+	for {
 		var item packageInfo
 
-		err = decoder.Decode(&item)
-		if err != nil {
-			return nil, fmt.Errorf("decoding go list output: %w", err)
+		decodeErr := decoder.Decode(&item)
+		if errors.Is(decodeErr, io.EOF) {
+			break
+		}
+
+		if decodeErr != nil {
+			return nil, fmt.Errorf("decoding go list output: %w", decodeErr)
 		}
 
 		files := item.sourceFiles()
