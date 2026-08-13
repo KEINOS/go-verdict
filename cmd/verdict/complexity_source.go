@@ -205,7 +205,7 @@ func validateModuleFile(name string) (string, error) {
 		return "", fmt.Errorf("%w: %q", errInvalidSourcePath, name)
 	}
 
-	return clean, nil
+	return filepath.ToSlash(clean), nil
 }
 
 func readContainedFile(root string, name string) ([]byte, error) {
