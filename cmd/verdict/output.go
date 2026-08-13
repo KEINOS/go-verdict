@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -8,6 +9,22 @@ import (
 	"github.com/KEINOS/go-verdict/cmd/verdict/internal/helptopic"
 	"github.com/KEINOS/go-verdict/verdict"
 )
+
+type complexityJSONReport struct {
+	Verdicts []complexityJSONVerdict `json:"verdicts"`
+}
+
+type complexityJSONVerdict struct {
+	BaselineLabel  string               `json:"baseline_label,omitempty"`
+	Benchmark      string               `json:"benchmark"`
+	CandidateLabel string               `json:"candidate_label,omitempty"`
+	Reason         string               `json:"reason"`
+	ReasonCode     string               `json:"reason_code,omitempty"`
+	Winner         string               `json:"winner,omitempty"`
+	Outcome        verdict.Outcome      `json:"outcome"`
+	Metrics        []verdict.Comparison `json:"metrics"`
+	Complexity     complexityDetail     `json:"complexity"`
+}
 
 func writeReport(report verdict.Report, cliOpts cliOptions, output io.Writer) error {
 	switch cliOpts.outputFormat {
@@ -28,6 +45,131 @@ func writeReport(report verdict.Report, cliOpts cliOptions, output io.Writer) er
 		}
 	default:
 		return errUnknownFormat
+	}
+
+	return nil
+}
+
+func writeComplexityReport(report complexityReport, cliOpts cliOptions, output io.Writer) error {
+	switch cliOpts.outputFormat {
+	case formatDefault:
+		if !cliOpts.verbose {
+			return wrapReportWriteError(report.Report.WriteText(output))
+		}
+
+		return writeComplexityVerboseText(report, output)
+	case formatJSON:
+		return writeComplexityJSON(report, output)
+	default:
+		return errUnknownFormat
+	}
+}
+
+func writeComplexityVerboseText(report complexityReport, output io.Writer) error {
+	for _, item := range report.Report.Verdicts {
+		err := verdict.Report{Verdicts: []verdict.BenchmarkVerdict{item}}.WriteVerboseText(output)
+		if err != nil {
+			return fmt.Errorf("%w: %w", errWritingOutput, err)
+		}
+
+		detail := report.Details[item.Benchmark]
+		if detail.Status == complexityStatusNotMapped {
+			_, err = fmt.Fprintln(output, "  complexity: not-mapped")
+			if err != nil {
+				return fmt.Errorf("%w: %w", errWritingOutput, err)
+			}
+
+			continue
+		}
+
+		_, err = fmt.Fprintf(output, "  complexity %s\n", detail.Direction)
+		if err != nil {
+			return fmt.Errorf("%w: %w", errWritingOutput, err)
+		}
+
+		err = writeComplexityMeasurement(output, "baseline", detail.Baseline)
+		if err != nil {
+			return err
+		}
+
+		err = writeComplexityMeasurement(output, "candidate", detail.Candidate)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeComplexityMeasurement(
+	output io.Writer,
+	side string,
+	measurement *complexityMeasurement,
+) error {
+	if measurement == nil {
+		return nil
+	}
+
+	source := measurement.Kind
+	if measurement.Ref != "" {
+		source += " ref=" + measurement.Ref
+	}
+
+	if measurement.Root != "" {
+		source += " root=" + measurement.Root
+	}
+
+	_, err := fmt.Fprintf(
+		output,
+		"    %s %s file=%s symbol=%s cyclomatic=%d cognitive=%d score=%.6g\n",
+		side,
+		source,
+		measurement.File,
+		measurement.Symbol,
+		measurement.Cyclomatic,
+		measurement.Cognitive,
+		measurement.Score,
+	)
+	if err != nil {
+		return fmt.Errorf("%w: %w", errWritingOutput, err)
+	}
+
+	return nil
+}
+
+func writeComplexityJSON(report complexityReport, output io.Writer) error {
+	jsonReport := complexityJSONReport{
+		Verdicts: make([]complexityJSONVerdict, 0, len(report.Report.Verdicts)),
+	}
+
+	for _, item := range report.Report.Verdicts {
+		jsonReport.Verdicts = append(jsonReport.Verdicts, complexityJSONVerdict{
+			BaselineLabel:  item.BaselineLabel,
+			Benchmark:      item.Benchmark,
+			CandidateLabel: item.CandidateLabel,
+			Reason:         item.Reason,
+			ReasonCode:     item.ReasonCode,
+			Winner:         item.Winner,
+			Outcome:        item.Outcome,
+			Metrics:        item.Metrics,
+			Complexity:     report.Details[item.Benchmark],
+		})
+	}
+
+	encoder := json.NewEncoder(output)
+	encoder.SetIndent("", "  ")
+
+	err := encoder.Encode(jsonReport)
+	if err != nil {
+		return fmt.Errorf("%w: %w", errWritingOutput, err)
+	}
+
+	return nil
+}
+
+func wrapReportWriteError(err error) error {
+	if err != nil {
+		return fmt.Errorf("%w: %w", errWritingOutput, err)
 	}
 
 	return nil
@@ -91,6 +233,10 @@ Options:
       P-value threshold for statistical significance. Must be greater than 0 and at most 1. Default: 0.05.
   --min-delta value
       Minimum absolute delta percentage to treat as a practical difference. Must be non-negative. Default: %.1f.
+  --complexity json
+      Add one explicit benchmark-to-source complexity mapping. Repeatable.
+  --complexity-config file
+      Read versioned benchmark-to-source complexity mappings from one JSON file.
 
 Hotspot options:
   --bench regexp

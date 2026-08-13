@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/KEINOS/go-verdict/cmd/verdict/internal/complexity"
+	"github.com/KEINOS/go-verdict/complexity"
 	"github.com/stretchr/testify/require"
 )
 

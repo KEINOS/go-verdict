@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/KEINOS/go-verdict/cmd/verdict/internal/complexity"
+	"github.com/KEINOS/go-verdict/complexity"
 )
 
 func TestClassifyPrefersHotAndComplex(t *testing.T) {

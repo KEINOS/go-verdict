@@ -15,9 +15,13 @@ const (
 	flagVersionLong  = "--version"
 	flagVersionShort = "-v"
 	formatDefault    = "text"
+	formatJSON       = "json"
 )
 
 type cliOptions struct {
+	complexity       complexityOptions
+	complexityConfig singlePathFlag
+	complexityRaw    stringListFlag
 	aPath            string
 	bPath            string
 	outputFormat     string
@@ -57,6 +61,15 @@ func initialize(args []string) (*verdict.Options, cliOptions, error) {
 		return nil, cliOptions{}, err
 	}
 
+	cliOpts.complexity, err = parseComplexityOptions(
+		cliOpts.complexityRaw,
+		cliOpts.complexityConfig.value,
+		cliOpts.complexityConfig.seen,
+	)
+	if err != nil {
+		return nil, cliOptions{}, err
+	}
+
 	return &opts, cliOpts, nil
 }
 
@@ -75,6 +88,8 @@ func bindFlags(flagSet *flag.FlagSet, opts *verdict.Options, cliOpts *cliOptions
 		"minimum absolute delta percentage treated as practical difference",
 	)
 	flagSet.BoolVar(&cliOpts.verbose, "verbose", false, "include verdict reason and metric details in text output")
+	flagSet.Var(&cliOpts.complexityRaw, "complexity", "JSON source mapping for one benchmark; repeatable")
+	flagSet.Var(&cliOpts.complexityConfig, "complexity-config", "path to a versioned JSON source mapping file")
 
 	return flagSet.String("require", "", "comma-separated outcomes required for a successful exit")
 }

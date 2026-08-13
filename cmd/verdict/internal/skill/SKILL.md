@@ -4,7 +4,7 @@ description: Use for Go performance requests, including "optimize this Go code",
 license: MIT
 metadata:
   author: KEINOS and The go-verdict Contributors
-  version: "1.3.0"
+  version: "1.4.0"
 ---
 
 # Verdict
@@ -36,6 +36,7 @@ Detailed guidance lives in the CLI, not in this skill. Fetch one topic only when
 | --- | --- |
 | One implementation edited over time | `benchstat old.txt new.txt \| verdict` |
 | CI or script must fail unless the candidate wins | `benchstat old.txt new.txt \| verdict --require new-wins` |
+| Maintenance cost must join the Pareto decision | `benchstat old.txt new.txt \| verdict --complexity-config complexity.json` |
 | Two implementations in one run, as `/original` and `/enhanced` sub-benchmarks | `go test -run='^$' -bench=BenchmarkX -benchmem -count=10 ./pkg \| verdict` |
 | Two existing raw files with different benchmark names | `verdict -a old.txt -b new.txt` |
 | No target chosen yet | `verdict hotspot ./pkg` (finds targets; never proves a win) |
@@ -52,6 +53,8 @@ Use `-count=3` to `-count=5` for cheap exploration. Use `-count=10` or more for 
 - If benchmark names, sub-benchmarks, inputs, or labels changed between captures, recapture both sides (`verdict help benchstat`).
 - Insufficient-sample and benchmark-set-mismatch errors mean no decision; fix the setup or collect more samples, then rerun (`verdict help results`).
 - `--require new-wins` is an executable gate: it still prints the report, then exits non-zero unless every verdict is `new-wins`.
+- Source complexity is opt-in because benchmark reports do not identify functions. Use exact benchmark, file, and symbol mappings; never guess them from benchmark names.
+- Complexity can turn a tie into a win or a performance win into a trade-off. It cannot turn inconclusive benchmark evidence into a decision.
 - Reject candidates that win by exploiting benchmark shape, flags, labels, fixture names, or unrepresentative benchmarks (overfitting).
 - A `complexity-hotspot` suggestion is a static estimate of where to look, not measured cost. Never report it as a performance finding.
 - Before reporting, verify the working tree still contains the candidate that produced the measured result.

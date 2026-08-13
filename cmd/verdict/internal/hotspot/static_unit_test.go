@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/KEINOS/go-verdict/cmd/verdict/internal/complexity"
+	"github.com/KEINOS/go-verdict/complexity"
 )
 
 func TestComplexityOnlyRanksAndScopesCandidates(t *testing.T) {
@@ -92,13 +92,13 @@ func TestStaticComplexityReportsFailures(t *testing.T) {
 	runner := newFakeRunner()
 	runner.outputs = []fakeOutput{{out: nil, err: errFakeRun}}
 
-	_, err := newCommand(t, runner).resolveModulePackages(testPkgArg, testModulePath)
+	_, err := newCommand(t, runner).resolveModuleSources(testPkgArg, testModulePath)
 	require.ErrorContains(t, err, "listing module packages")
 
 	runner = newFakeRunner()
 	runner.outputs = []fakeOutput{{out: []byte("{"), err: nil}}
 
-	_, err = newCommand(t, runner).resolveModulePackages(testPkgArg, testModulePath)
+	_, err = newCommand(t, runner).resolveModuleSources(testPkgArg, testModulePath)
 	require.ErrorContains(t, err, "decoding go list output")
 
 	runner = newFakeRunner()
@@ -106,6 +106,29 @@ func TestStaticComplexityReportsFailures(t *testing.T) {
 
 	_, err = newCommand(t, runner).staticComplexity(testPkgArg, samplePackageInfo())
 	require.ErrorContains(t, err, "analyzing complexity")
+}
+
+func TestModuleSourceReadingReportsFilesystemErrors(t *testing.T) {
+	t.Parallel()
+
+	missingRoot := packageInfo{
+		ImportPath: testImportPath,
+		Dir:        "testdata/missing",
+		Module:     nil,
+		GoFiles:    nil,
+		CgoFiles:   nil,
+	}
+	_, err := readPackageSources(missingRoot, []string{"missing.go"})
+	require.ErrorContains(t, err, "opening package source root")
+
+	missingFile := samplePackageInfo()
+	_, err = readPackageSources(missingFile, []string{"missing.go"})
+	require.ErrorContains(t, err, "reading source")
+
+	runner := newFakeRunner()
+	runner.outputs = []fakeOutput{{out: goListMissingSourceJSON(), err: nil}}
+	_, err = newCommand(t, runner).resolveModuleSources(testPkgArg, testModulePath)
+	require.ErrorContains(t, err, "reading source")
 }
 
 // statOf builds a static result for a symbol. No test symbol has a method
@@ -141,6 +164,11 @@ func goListBrokenJSON() []byte {
 		` "GoFiles": ["broken.go"], "Module": {"Path": "` + testModulePath + `"}}` + "\n")
 }
 
+func goListMissingSourceJSON() []byte {
+	return []byte(`{"ImportPath": "` + testImportPath + `", "Dir": "` + testSampleDir + `",` +
+		` "GoFiles": ["missing.go"], "Module": {"Path": "` + testModulePath + `"}}` + "\n")
+}
+
 func TestStaticKeyStripsGenericsAndClosures(t *testing.T) {
 	t.Parallel()
 
@@ -158,42 +186,44 @@ func TestStaticKeyStripsGenericsAndClosures(t *testing.T) {
 	}
 }
 
-func TestResolveModulePackagesKeepsModuleLocalPackages(t *testing.T) {
+func TestResolveModuleSourcesKeepsModuleLocalPackages(t *testing.T) {
 	t.Parallel()
 
 	runner := newFakeRunner()
 	runner.outputs = []fakeOutput{{out: goListDepsJSON(), err: nil}}
 
-	got, err := newCommand(t, runner).resolveModulePackages(testPkgArg, testModulePath)
+	got, err := newCommand(t, runner).resolveModuleSources(testPkgArg, testModulePath)
 	require.NoError(t, err)
 	require.Len(t, got, 1, "standard library and other modules are not user code")
 	require.Equal(t, testImportPath, got[0].ImportPath)
-	require.Equal(t, []string{"sample.go"}, got[0].Files)
+	require.Equal(t, "sample.go", got[0].Name)
+	require.NotEmpty(t, got[0].Content)
 	require.Contains(t, runner.calls[0].Args, "-deps")
 }
 
-func TestResolveModulePackagesWithoutModulePath(t *testing.T) {
+func TestResolveModuleSourcesWithoutModulePath(t *testing.T) {
 	t.Parallel()
 
 	runner := newFakeRunner()
 	runner.outputs = []fakeOutput{{out: goListDepsJSON(), err: nil}}
 
-	got, err := newCommand(t, runner).resolveModulePackages(testPkgArg, "")
+	got, err := newCommand(t, runner).resolveModuleSources(testPkgArg, "")
 	require.NoError(t, err)
 	require.Empty(t, got, "without a module path there is no user-code boundary to trust")
 	require.Empty(t, runner.calls, "no package listing is needed")
 }
 
-func TestResolveModulePackagesIncludesCgoSources(t *testing.T) {
+func TestResolveModuleSourcesIncludesCgoSources(t *testing.T) {
 	t.Parallel()
 
 	runner := newFakeRunner()
 	runner.outputs = []fakeOutput{{out: goListCgoJSON(), err: nil}}
 
-	got, err := newCommand(t, runner).resolveModulePackages(testPkgArg, testModulePath)
+	got, err := newCommand(t, runner).resolveModuleSources(testPkgArg, testModulePath)
 	require.NoError(t, err)
-	require.Len(t, got, 1)
-	require.Equal(t, []string{"sample.go", "bridge.go"}, got[0].Files,
+	require.Len(t, got, 2)
+	require.Equal(t, "sample.go", got[0].Name)
+	require.Equal(t, "bridge.go", got[1].Name,
 		"a cgo package keeps its Go-side sources in CgoFiles")
 }
 

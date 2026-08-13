@@ -6,6 +6,14 @@ Auto mode is the default input mode. It detects whether stdin contains `benchsta
 
 The same guidance is available from the CLI without opening this file: `verdict help` lists the workflow topics, and `verdict help <topic>` prints one of them, such as `verdict help benchstat`.
 
+## Optional Maintainability Signal
+
+The Judge workflows can add source complexity to the performance metrics when the report benchmark is explicitly mapped to baseline and candidate functions. Use `--complexity-config complexity.json` for a readable multi-benchmark mapping. See [CLI Details](README_CLI.md#optional-source-complexity) for the schema and source kinds.
+
+Use this option when a performance change must also account for long-term readability and maintenance cost. Complexity remains a static source measurement, so it does not replace representative benchmarks or correctness tests.
+
+The mapping key is the exact final report benchmark. Named raw files use the synthesized name without CPU suffixes, such as `BenchmarkFast_vs_BenchmarkSlow`.
+
 ## Hotspot Scout
 
 Use this workflow before choosing what to optimize.

@@ -21,7 +21,6 @@ const (
 	flagMode        = "--mode"
 	flagRequire     = "--require"
 	formatText      = "text"
-	formatJSON      = "json"
 	removedMode     = "alternatives"
 	optionAlpha     = "alpha"
 	optionMinDelta  = "min-delta"

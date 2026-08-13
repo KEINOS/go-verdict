@@ -110,6 +110,10 @@ Options:
       P-value threshold for statistical significance. Must be greater than 0 and at most 1. Default: 0.05.
   --min-delta value
       Minimum absolute delta percentage to treat as a practical difference. Must be non-negative. Default: 2.0.
+  --complexity json
+      Add one explicit benchmark-to-source complexity mapping. Repeatable.
+  --complexity-config file
+      Read versioned benchmark-to-source complexity mappings from one JSON file.
 
 Hotspot options:
   --bench regexp
