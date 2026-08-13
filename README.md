@@ -18,11 +18,12 @@ Use `verdict` when CI, scripts, or AI agents need a repeatable keep-or-reject ga
     BenchmarkMyHeavyFunc: enhanced wins
     ```
 
-- Not sure where to start? Let the benchmark profiles point at the first function to inspect:
+- Not sure where to start? Let the profiles and the source point at the first function to inspect:
 
     ```shellsession
     % verdict hotspot ./your/package
-    ./your/package: inspect example.com/yourmod/yourpkg.CountASCIIWords (cpu-hotspot; cpu flat 85.7%, cpu cum 90.5%)
+    ./your/package: inspect example.com/yourmod/yourpkg.CountASCIIWords at words.go:42 (hot-and-complex; cpu flat 85.7%, cpu cum 90.5%; cyclomatic 14, cognitive 21)
+    Also: example.com/yourmod/yourpkg.Encode at encode.go:12 (alloc-rate-hotspot)
     Next: Optimize a candidate, then judge before/after benchmark results with verdict.
     ```
 
@@ -77,7 +78,7 @@ Commands:
   help [topic]
       Print workflow help. Topics: bootstrap, hotspot, benchstat, gotestbench, results.
   hotspot <package>
-      Suggest the first function to inspect from benchmark CPU and allocation profiles.
+      Suggest the first function to inspect from benchmark profiles and source complexity.
   skill
       Print the AI Agent skill text.
   version
@@ -117,6 +118,11 @@ Hotspot options:
       Benchmark time or iteration count for verdict hotspot. Default: 1s.
   --count n
       Benchmark run count for verdict hotspot. Default: 1.
+  --top n
+      Number of candidates to report for verdict hotspot. Default: 3.
+  --fast
+      Profile CPU and memory in one benchmark pass instead of two.
+      Halves the run time and lowers CPU accuracy.
   --format text|json
       Output format for verdict hotspot. Default: text.
 ```

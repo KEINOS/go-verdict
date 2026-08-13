@@ -9,16 +9,29 @@ import (
 	"strings"
 )
 
+// Column positions in one "go tool pprof -top" row.
+const (
+	idxFlat = iota
+	idxFlatPct
+	idxSumPct
+	idxCum
+	idxCumPct
+	idxFunction
+	topLineFields
+)
+
 const (
 	bytesPerKB  = 1_024.0
 	microsPerMS = 1_000.0
+	msPerHour   = 3_600_000.0
 	msPerSecond = 1_000.0
 	nanosPerMS  = 1_000_000.0
 )
 
 var (
-	inlineMarker = regexp.MustCompile(`\s+\(inline\)$`)
-	spacePattern = regexp.MustCompile(`\s+`)
+	inlineMarker  = regexp.MustCompile(`\s+\(inline\)$`)
+	spacePattern  = regexp.MustCompile(`\s+`)
+	closureSuffix = regexp.MustCompile(`\.func\d+(\.\d+)*$`)
 
 	errNoPprofRows        = errors.New("pprof top output has no rows")
 	errUnsupportedProfile = errors.New("unsupported profile kind")
@@ -29,6 +42,8 @@ type profileKind int
 const (
 	profileCPU profileKind = iota
 	profileAlloc
+	profileAllocObjects
+	profileInuse
 )
 
 type pprofRow struct {
@@ -40,8 +55,39 @@ type pprofRow struct {
 }
 
 type profileSet struct {
-	CPU   map[string]pprofRow
-	Alloc map[string]pprofRow
+	CPU          map[string]pprofRow
+	Alloc        map[string]pprofRow
+	AllocObjects map[string]pprofRow
+	Inuse        map[string]pprofRow
+}
+
+// profileSpec pairs one signal with the profile file it is read from and the
+// label used in its error messages.
+type profileSpec struct {
+	path  string
+	label string
+	kind  profileKind
+}
+
+// supported reports whether the kind maps to a known pprof sample index.
+func (kind profileKind) supported() bool {
+	switch kind {
+	case profileCPU, profileAlloc, profileAllocObjects, profileInuse:
+		return true
+	default:
+		return false
+	}
+}
+
+// profileSpecs lists every signal in read order. The three memory views come
+// from the same memory profile file, so they cost no extra benchmark time.
+func profileSpecs(cpuPath string, memPath string) []profileSpec {
+	return []profileSpec{
+		{kind: profileCPU, path: cpuPath, label: "CPU"},
+		{kind: profileAlloc, path: memPath, label: "allocation"},
+		{kind: profileAllocObjects, path: memPath, label: "allocation count"},
+		{kind: profileInuse, path: memPath, label: "retained memory"},
+	}
 }
 
 func mergeRows(left pprofRow, right pprofRow) pprofRow {
@@ -65,11 +111,62 @@ func normalizeSymbol(symbol string) string {
 	return spacePattern.ReplaceAllString(symbol, " ")
 }
 
+// staticKey turns a pprof symbol into the symbol the static analyzer uses. A
+// generic instantiation loses its shape suffix, and a closure is attributed to
+// the function that declares it.
+func staticKey(function string) string {
+	return closureSuffix.ReplaceAllString(stripShapes(function), "")
+}
+
+// stripShapes removes every bracketed generic instantiation. Brackets nest,
+// because a shape can itself be a composite type such as go.shape.[]int, so
+// this counts depth instead of matching a bracket pair with a pattern.
+func stripShapes(symbol string) string {
+	var builder strings.Builder
+
+	depth := 0
+
+	for _, char := range symbol {
+		switch {
+		case char == '[':
+			depth++
+		case char == ']' && depth > 0:
+			depth--
+		case depth == 0:
+			builder.WriteRune(char)
+		}
+	}
+
+	return builder.String()
+}
+
+// emptyProfiles is the profile set of a run that produced no measurements.
+func emptyProfiles() profileSet {
+	return profileSet{
+		CPU:          map[string]pprofRow{},
+		Alloc:        map[string]pprofRow{},
+		AllocObjects: map[string]pprofRow{},
+		Inuse:        map[string]pprofRow{},
+	}
+}
+
+// userProfiles keeps only the rows that belong to the user's own module.
+func userProfiles(profiles profileSet, prefixes []string) profileSet {
+	return profileSet{
+		CPU:          userRows(profiles.CPU, prefixes),
+		Alloc:        userRows(profiles.Alloc, prefixes),
+		AllocObjects: userRows(profiles.AllocObjects, prefixes),
+		Inuse:        userRows(profiles.Inuse, prefixes),
+	}
+}
+
 func parseByteValue(value string) (float64, bool) {
 	units := []struct {
 		suffix string
 		scale  float64
 	}{
+		{suffix: "PB", scale: bytesPerKB * bytesPerKB * bytesPerKB * bytesPerKB * bytesPerKB},
+		{suffix: "TB", scale: bytesPerKB * bytesPerKB * bytesPerKB * bytesPerKB},
 		{suffix: "GB", scale: bytesPerKB * bytesPerKB * bytesPerKB},
 		{suffix: "MB", scale: bytesPerKB * bytesPerKB},
 		{suffix: "kB", scale: bytesPerKB},
@@ -85,6 +182,7 @@ func parseCPUValue(value string) (float64, bool) {
 		suffix string
 		scale  float64
 	}{
+		{suffix: "hrs", scale: msPerHour},
 		{suffix: "ns", scale: 1.0 / nanosPerMS},
 		{suffix: "us", scale: 1.0 / microsPerMS},
 		{suffix: "µs", scale: 1.0 / microsPerMS},
@@ -95,6 +193,14 @@ func parseCPUValue(value string) (float64, bool) {
 	return parseUnitValue(value, units)
 }
 
+// parseCountValue reads an object count. pprof prints count samples without a
+// unit suffix, so the raw number is the value.
+func parseCountValue(value string) (float64, bool) {
+	parsed, err := strconv.ParseFloat(value, 64)
+
+	return parsed, err == nil
+}
+
 func parsePercent(value string) (float64, bool) {
 	parsed, err := strconv.ParseFloat(strings.TrimSuffix(value, "%"), 64)
 
@@ -102,60 +208,61 @@ func parsePercent(value string) (float64, bool) {
 }
 
 func parseTop(output []byte, kind profileKind) ([]pprofRow, error) {
-	if kind != profileCPU && kind != profileAlloc {
+	if !kind.supported() {
 		return nil, errUnsupportedProfile
 	}
 
 	lines := strings.Split(string(output), "\n")
 	rows := make([]pprofRow, 0)
+	hasTopHeader := false
 
 	for _, line := range lines {
+		if strings.Join(strings.Fields(line), " ") == "flat flat% sum% cum cum%" {
+			hasTopHeader = true
+		}
+
 		row, ok := parseTopLine(line, kind)
 		if ok {
 			rows = append(rows, row)
 		}
 	}
 
-	if len(rows) == 0 {
+	if len(rows) == 0 && !hasTopHeader {
 		return nil, errNoPprofRows
 	}
 
 	return rows, nil
 }
 
+// parseTopLine reads one "go tool pprof -top" row. The layout is
+// "flat flat% sum% cum cum% function", so a row needs six fields and the two
+// percent columns must carry a percent sign.
 func parseTopLine(line string, kind profileKind) (pprofRow, bool) {
 	fields := strings.Fields(line)
-	if len(fields) < 6 || !strings.HasSuffix(fields[1], "%") || !strings.HasSuffix(fields[4], "%") {
+	if len(fields) < topLineFields || !isPercent(fields[idxFlatPct]) || !isPercent(fields[idxCumPct]) {
 		return zeroPprofRow(), false
 	}
 
-	flat, ok := parseValue(fields[0], kind)
-	if !ok {
-		return zeroPprofRow(), false
-	}
+	flat, flatOK := parseValue(fields[idxFlat], kind)
+	flatPct, flatPctOK := parsePercent(fields[idxFlatPct])
+	cum, cumOK := parseValue(fields[idxCum], kind)
+	cumPct, cumPctOK := parsePercent(fields[idxCumPct])
 
-	flatPct, ok := parsePercent(fields[1])
-	if !ok {
-		return zeroPprofRow(), false
-	}
-
-	cum, ok := parseValue(fields[3], kind)
-	if !ok {
-		return zeroPprofRow(), false
-	}
-
-	cumPct, ok := parsePercent(fields[4])
-	if !ok {
+	if !flatOK || !flatPctOK || !cumOK || !cumPctOK {
 		return zeroPprofRow(), false
 	}
 
 	return pprofRow{
-		Function: normalizeSymbol(strings.Join(fields[5:], " ")),
+		Function: normalizeSymbol(strings.Join(fields[idxFunction:], " ")),
 		Flat:     flat,
 		FlatPct:  flatPct,
 		Cum:      cum,
 		CumPct:   cumPct,
 	}, true
+}
+
+func isPercent(field string) bool {
+	return strings.HasSuffix(field, "%")
 }
 
 func parseUnitValue(value string, units []struct {
@@ -181,8 +288,10 @@ func parseValue(value string, kind profileKind) (float64, bool) {
 	switch kind {
 	case profileCPU:
 		return parseCPUValue(value)
-	case profileAlloc:
+	case profileAlloc, profileInuse:
 		return parseByteValue(value)
+	case profileAllocObjects:
+		return parseCountValue(value)
 	default:
 		return 0, false
 	}
@@ -190,13 +299,31 @@ func parseValue(value string, kind profileKind) (float64, bool) {
 
 func pprofInvocation(binaryPath string, profilePath string, kind profileKind) invocation {
 	args := []string{"tool", "pprof", "-top"}
-	if kind == profileAlloc {
-		args = append(args, "-alloc_space")
+
+	if flag := sampleFlag(kind); flag != "" {
+		args = append(args, flag)
 	}
 
 	args = append(args, "-nodecount=50", binaryPath, profilePath)
 
 	return invocation{Dir: "", Name: "go", Args: args}
+}
+
+// sampleFlag returns the pprof flag that selects one sample index. The CPU
+// profile has a single sample index, so it needs no flag.
+func sampleFlag(kind profileKind) string {
+	switch kind {
+	case profileAlloc:
+		return "-alloc_space"
+	case profileAllocObjects:
+		return "-alloc_objects"
+	case profileInuse:
+		return "-inuse_space"
+	case profileCPU:
+		return ""
+	default:
+		return ""
+	}
 }
 
 func rowsByFunction(rows []pprofRow) map[string]pprofRow {

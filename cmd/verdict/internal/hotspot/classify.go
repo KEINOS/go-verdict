@@ -1,10 +1,16 @@
 package hotspot
 
-// This file selects hotspot candidates from parsed profile rows.
+// This file fuses every signal into candidates and ranks them with a Pareto
+// comparison, so a function that is hot in several ways outranks one that is
+// hot in only one.
 
 import (
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
+
+	"github.com/KEINOS/go-verdict/cmd/verdict/internal/complexity"
+	"github.com/KEINOS/go-verdict/internal/pareto"
 )
 
 const (
@@ -13,117 +19,528 @@ const (
 	cpuCumThreshold    = 10.0
 	cpuFlatThreshold   = 5.0
 
-	rankMixed = 0
-	rankCPU   = 1
-	rankAlloc = 2
-	rankOther = 3
+	// Complexity thresholds mark code worth reading, not code that is slow.
+	cognitiveThreshold  = 15.0
+	cyclomaticThreshold = 10.0
 
-	classAllocHotspot   = "alloc-hotspot"
-	classCPUHotspot     = "cpu-hotspot"
-	classMixedHotspot   = "mixed-hotspot"
-	classNoBenchmark    = "no-benchmark"
-	classNoClearHotspot = "no-clear-hotspot"
+	// scoreEpsilon keeps float noise from looking like a real difference.
+	scoreEpsilon = 1e-9
+
+	// qualifies is the normalized score at which a signal counts.
+	qualifies = 1.0
+
+	signalCPU          = "cpu"
+	signalAllocBytes   = "alloc-bytes"
+	signalAllocObjects = "alloc-objects"
+	signalRetained     = "retained"
+	signalComplexity   = "complexity"
+
+	classAllocHotspot      = "alloc-hotspot"
+	classAllocRateHotspot  = "alloc-rate-hotspot"
+	classComplexityHotspot = "complexity-hotspot"
+	classCPUHotspot        = "cpu-hotspot"
+	classHotAndComplex     = "hot-and-complex"
+	classMixedHotspot      = "mixed-hotspot"
+	classNoBenchmark       = "no-benchmark"
+	classNoClearHotspot    = "no-clear-hotspot"
+	classRetentionHotspot  = "retention-hotspot"
 )
 
-func choiceScore(choice Choice) float64 {
-	return max(
-		metricScore(choice.CPU, cpuFlatThreshold, cpuCumThreshold),
-		metricScore(choice.Alloc, allocFlatThreshold, allocCumThreshold),
-	)
+// Signal indexes. Every candidate carries one normalized score per signal.
+const (
+	idxCPU = iota
+	idxAllocBytes
+	idxAllocObjects
+	idxRetained
+	idxComplexity
+	signalCount
+)
+
+// candidate is one function with every signal it triggered.
+type candidate struct {
+	function     string
+	file         string
+	cpu          Metric
+	allocBytes   Metric
+	allocObjects Metric
+	retained     Metric
+	complexity   Complexity
+	scores       [signalCount]float64
+	dominators   int
+	line         int
 }
 
-func classificationRank(classification string) int {
-	switch classification {
-	case classMixedHotspot:
-		return rankMixed
-	case classCPUHotspot:
-		return rankCPU
-	case classAllocHotspot:
-		return rankAlloc
+// reportConfig describes how a report explains the absence of measured cost.
+type reportConfig struct {
+	staticCaveat string
+	emptyCaveat  string
+	emptyClass   string
+	top          int
+}
+
+/* Constructors and Methods */
+
+// candidate
+
+// measured reports whether any profile signal, as opposed to the static
+// estimate, put this candidate above its threshold.
+func (item candidate) measured() bool {
+	for index := range idxComplexity {
+		if item.above(index) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// above reports whether one signal put this candidate over its threshold.
+func (item candidate) above(index int) bool {
+	return item.scores[index] >= qualifies
+}
+
+// anyMemory reports whether any of the three memory views qualified.
+func (item candidate) anyMemory() bool {
+	return item.above(idxAllocBytes) || item.above(idxAllocObjects) || item.above(idxRetained)
+}
+
+// signals names every signal that put this candidate above its threshold.
+func (item candidate) signals() []string {
+	names := make([]string, 0, signalCount)
+
+	for index, name := range signalNames() {
+		if item.above(index) {
+			names = append(names, name)
+		}
+	}
+
+	return names
+}
+
+// topScore is the strongest single signal, used to break ties inside the
+// Pareto front where no candidate dominates another.
+func (item candidate) topScore() float64 {
+	best := 0.0
+
+	for _, score := range item.scores {
+		best = max(best, score)
+	}
+
+	return best
+}
+
+// classification names the shape of the candidate from its signals. Measured
+// cost that is also complex is the headline case, so it gets its own name.
+func (item candidate) classification() string {
+	if item.measured() && item.above(idxComplexity) {
+		return classHotAndComplex
+	}
+
+	return item.singleShapeClassification()
+}
+
+func (item candidate) singleShapeClassification() string {
+	switch {
+	case item.above(idxCPU) && item.anyMemory():
+		return classMixedHotspot
+	case item.above(idxCPU):
+		return classCPUHotspot
+	case item.above(idxAllocBytes):
+		return classAllocHotspot
+	case item.above(idxAllocObjects):
+		return classAllocRateHotspot
+	case item.above(idxRetained):
+		return classRetentionHotspot
 	default:
-		return rankOther
+		return classComplexityHotspot
 	}
 }
 
-func classify(base Result, profiles profileSet) Result {
-	cpuCandidates := profileCandidates(profiles.CPU, profileCPU)
-	allocCandidates := profileCandidates(profiles.Alloc, profileAlloc)
-	choices := make([]Choice, 0)
-
-	for function, cpu := range cpuCandidates {
-		if alloc, ok := allocCandidates[function]; ok {
-			choices = append(choices, makeChoice(classMixedHotspot, classMixedHotspot, function, cpu, alloc))
-		}
+func (item candidate) choice() Choice {
+	return Choice{
+		Classification: item.classification(),
+		Function:       item.function,
+		File:           item.file,
+		Line:           item.line,
+		Signals:        item.signals(),
+		CPU:            item.cpu,
+		AllocBytes:     item.allocBytes,
+		AllocObjects:   item.allocObjects,
+		Retained:       item.retained,
+		Complexity:     item.complexity,
 	}
+}
 
-	if len(choices) == 0 {
-		for function, cpu := range cpuCandidates {
-			choices = append(choices, makeChoice(classCPUHotspot, classCPUHotspot, function, cpu, zeroPprofRow()))
-		}
+/* Helper Functions */
 
-		for function, alloc := range allocCandidates {
-			choices = append(choices, makeChoice(classAllocHotspot, classAllocHotspot, function, zeroPprofRow(), alloc))
-		}
-	}
+func signalNames() [signalCount]string {
+	return [signalCount]string{signalCPU, signalAllocBytes, signalAllocObjects, signalRetained, signalComplexity}
+}
 
-	if len(choices) == 0 {
-		base.Classification = classNoClearHotspot
+// classify ranks the profile and static signals into one report.
+func classify(base Result, profiles profileSet, static map[string]complexity.Stat, top int) Result {
+	return report(base, profiles, static, reportConfig{
+		staticCaveat: caveatNoClearHotspotStatic,
+		emptyCaveat:  caveatNoClearHotspot,
+		emptyClass:   classNoClearHotspot,
+		top:          top,
+	})
+}
 
-		base.Reason = classNoClearHotspot
-		if base.Caveat == "" {
-			base.Caveat = "No clear user-code hotspot found for this benchmark workload."
-		}
+// withoutBenchmark reports the static view when no benchmark workload ran.
+func withoutBenchmark(base Result, static map[string]complexity.Stat, top int) Result {
+	return report(base, emptyProfiles(), static, reportConfig{
+		staticCaveat: caveatNoBenchmarkStatic,
+		emptyCaveat:  caveatNoBenchmark,
+		emptyClass:   classNoBenchmark,
+		top:          top,
+	})
+}
+
+// report builds candidates, ranks them, and fills the result.
+func report(base Result, profiles profileSet, static map[string]complexity.Stat, cfg reportConfig) Result {
+	ranked := rankCandidates(buildCandidates(profiles, static, base.ImportPath))
+	if len(ranked) == 0 {
+		base.Classification = cfg.emptyClass
+		base.Caveat = appendCaveat(base.Caveat, cfg.emptyCaveat)
 
 		return base
 	}
 
-	sort.SliceStable(choices, func(left int, right int) bool {
-		return compareChoice(choices[left], choices[right]) < 0
-	})
+	primary := ranked[0]
+	base = withPrimary(base, primary)
+	base.Candidates = runnersUp(ranked, cfg.top)
 
-	primary := choices[0]
-	base.Classification = primary.Classification
-	base.Reason = primary.Reason
-	base.Function = primary.Function
-	base.CPU = primary.CPU
-	base.Alloc = primary.Alloc
-
-	if len(choices) > 1 {
-		secondary := choices[1]
-		base.Secondary = &secondary
+	if !primary.measured() {
+		base.Caveat = appendCaveat(base.Caveat, cfg.staticCaveat)
 	}
 
 	return base
 }
 
-func compareChoice(left Choice, right Choice) int {
-	leftRank := classificationRank(left.Classification)
-	rightRank := classificationRank(right.Classification)
+// withPrimary copies the suggested candidate into the top level of the report.
+func withPrimary(base Result, primary candidate) Result {
+	base.Classification = primary.classification()
+	base.Function = primary.function
+	base.File = primary.file
+	base.Line = primary.line
+	base.Signals = primary.signals()
+	base.CPU = primary.cpu
+	base.AllocBytes = primary.allocBytes
+	base.AllocObjects = primary.allocObjects
+	base.Retained = primary.retained
+	base.Complexity = primary.complexity
 
-	if leftRank != rightRank {
-		return leftRank - rightRank
+	return base
+}
+
+// runnersUp returns the candidates after the suggestion, capped so that the
+// report never names more than top candidates in total.
+func runnersUp(ranked []candidate, top int) []Choice {
+	limit := min(top, len(ranked))
+	choices := make([]Choice, 0, max(limit-1, 0))
+
+	for _, item := range ranked[1:limit] {
+		choices = append(choices, item.choice())
 	}
 
-	leftScore := choiceScore(left)
+	return choices
+}
 
-	rightScore := choiceScore(right)
-	if leftScore > rightScore {
-		return -1
+// buildCandidates unions every function that any signal put above its
+// threshold. Complexity scores any module-local function, but only the target
+// package can enter the candidate set on complexity alone.
+func buildCandidates(profiles profileSet, static map[string]complexity.Stat, importPath string) []candidate {
+	items := make(map[string]*candidate)
+
+	addRows(items, profiles.CPU, idxCPU, static)
+	addRows(items, profiles.Alloc, idxAllocBytes, static)
+	addRows(items, profiles.AllocObjects, idxAllocObjects, static)
+	addRows(items, profiles.Inuse, idxRetained, static)
+	addStatic(items, static, importPath)
+
+	qualified := make([]candidate, 0, len(items))
+
+	for _, item := range items {
+		if slices.ContainsFunc(item.scores[:], func(score float64) bool { return score >= qualifies }) {
+			qualified = append(qualified, *item)
+		}
 	}
 
-	if leftScore < rightScore {
-		return 1
+	return qualified
+}
+
+func addRows(
+	items map[string]*candidate,
+	rows map[string]pprofRow,
+	index int,
+	static map[string]complexity.Stat,
+) {
+	for function, row := range rows {
+		key := canonicalKey(function, static)
+		item := itemFor(items, key, function)
+
+		switch index {
+		case idxCPU:
+			item.cpu = mergeMetrics(item.cpu, metricOf(row, unitMS))
+		case idxAllocBytes:
+			item.allocBytes = mergeMetrics(item.allocBytes, metricOf(row, unitBytes))
+		case idxAllocObjects:
+			item.allocObjects = mergeMetrics(item.allocObjects, metricOf(row, unitObjects))
+		case idxRetained:
+			item.retained = mergeMetrics(item.retained, metricOf(row, unitBytes))
+		}
+
+		item.scores[index] = profileScore(metricRow(item, index), index)
+	}
+}
+
+// addStatic attaches the source position and complexity of every function the
+// static pass scored, and admits target-package functions as candidates.
+func addStatic(items map[string]*candidate, static map[string]complexity.Stat, importPath string) {
+	// joined holds the static symbol every measured candidate maps to, so a
+	// generic instantiation or a closure never becomes a second candidate for
+	// the function that declares it.
+	joined := make(map[string]struct{}, len(items))
+
+	for key, item := range items {
+		joined[key] = struct{}{}
+
+		stat, ok := static[key]
+		if !ok {
+			continue
+		}
+
+		applyStatic(item, stat)
 	}
 
-	if left.Function < right.Function {
-		return -1
+	for _, stat := range static {
+		if stat.ImportPath != importPath || complexityScore(stat) < qualifies {
+			continue
+		}
+
+		if _, ok := joined[stat.Symbol]; ok {
+			continue
+		}
+
+		applyStatic(itemFor(items, stat.Symbol, stat.Symbol), stat)
+	}
+}
+
+// applyStatic attaches the source position and complexity of one function.
+// Complexity scores every candidate, including one measured in another
+// module-local package, because hiding the score there would misreport a
+// function the profiles already proved to be hot.
+func applyStatic(item *candidate, stat complexity.Stat) {
+	item.file = stat.File
+	item.line = stat.Line
+	item.complexity = Complexity{Cyclomatic: stat.Cyclomatic, Cognitive: stat.Cognitive}
+	item.scores[idxComplexity] = complexityScore(stat)
+}
+
+func itemFor(items map[string]*candidate, key string, function string) *candidate {
+	item, ok := items[key]
+	if !ok {
+		item = &candidate{
+			function:     function,
+			file:         "",
+			line:         0,
+			cpu:          zeroMetric(unitMS),
+			allocBytes:   zeroMetric(unitBytes),
+			allocObjects: zeroMetric(unitObjects),
+			retained:     zeroMetric(unitBytes),
+			complexity:   Complexity{Cyclomatic: 0, Cognitive: 0},
+			scores:       [signalCount]float64{},
+			dominators:   0,
+		}
+		items[key] = item
+	} else if function < item.function {
+		item.function = function
 	}
 
-	if left.Function > right.Function {
+	return item
+}
+
+func canonicalKey(function string, static map[string]complexity.Stat) string {
+	stripped := stripShapes(function)
+	if _, ok := static[stripped]; ok {
+		return stripped
+	}
+
+	if valueMethod := valueMethodKey(stripped); valueMethod != "" {
+		if _, ok := static[valueMethod]; ok {
+			return valueMethod
+		}
+	}
+
+	closure := closureSuffix.ReplaceAllString(stripped, "")
+	if closure != stripped {
+		if _, ok := static[closure]; ok {
+			return closure
+		}
+	}
+
+	return stripped
+}
+
+func valueMethodKey(function string) string {
+	start := strings.LastIndex(function, ".(*")
+	if start < 0 {
+		return ""
+	}
+
+	receiverStart := start + len(".(*")
+
+	closeOffset := strings.Index(function[receiverStart:], ").")
+	if closeOffset < 0 {
+		return ""
+	}
+
+	closeIndex := receiverStart + closeOffset
+	receiver := function[receiverStart:closeIndex]
+	method := function[closeIndex+len(")."):]
+
+	return function[:start] + "." + receiver + "." + method
+}
+
+func mergeMetrics(left Metric, right Metric) Metric {
+	return Metric{
+		Unit:    right.Unit,
+		Flat:    left.Flat + right.Flat,
+		FlatPct: left.FlatPct + right.FlatPct,
+		Cum:     max(left.Cum, right.Cum),
+		CumPct:  max(left.CumPct, right.CumPct),
+	}
+}
+
+func metricRow(item *candidate, index int) pprofRow {
+	metric := item.cpu
+
+	switch index {
+	case idxAllocBytes:
+		metric = item.allocBytes
+	case idxAllocObjects:
+		metric = item.allocObjects
+	case idxRetained:
+		metric = item.retained
+	}
+
+	return pprofRow{
+		Function: item.function,
+		Flat:     metric.Flat,
+		FlatPct:  metric.FlatPct,
+		Cum:      metric.Cum,
+		CumPct:   metric.CumPct,
+	}
+}
+
+// rankCandidates orders candidates by how many other candidates dominate them,
+// so the Pareto front comes first. Dominance is transitive, so every candidate
+// that dominates another is also dominated by strictly fewer candidates than
+// the one it beats, and it therefore always sorts ahead of it.
+func rankCandidates(candidates []candidate) []candidate {
+	ranked := slices.Clone(candidates)
+
+	for index := range ranked {
+		ranked[index].dominators = dominatorCount(ranked[index], candidates)
+	}
+
+	slices.SortFunc(ranked, func(left candidate, right candidate) int {
+		if order := cmp.Compare(left.dominators, right.dominators); order != 0 {
+			return order
+		}
+
+		return compareCandidates(left, right)
+	})
+
+	return ranked
+}
+
+// dominatorCount counts the candidates that are at least as strong on every
+// signal and stronger on at least one.
+func dominatorCount(item candidate, candidates []candidate) int {
+	count := 0
+
+	for _, other := range candidates {
+		if other.function == item.function {
+			continue
+		}
+
+		if pareto.Compare(signalRelations(other, item)...) == pareto.CandidateWins {
+			count++
+		}
+	}
+
+	return count
+}
+
+// signalRelations maps every signal to a Pareto metric. A higher score always
+// means more worth inspecting, so the units never have to be weighed together.
+func signalRelations(left candidate, right candidate) []pareto.Metric {
+	relations := make([]pareto.Metric, 0, signalCount)
+
+	for index := range signalCount {
+		relations = append(relations, scoreRelation(left.scores[index], right.scores[index]))
+	}
+
+	return relations
+}
+
+func scoreRelation(left float64, right float64) pareto.Metric {
+	switch {
+	case left > right+scoreEpsilon:
+		return pareto.Better
+	case left < right-scoreEpsilon:
+		return pareto.Worse
+	default:
+		return pareto.Same
+	}
+}
+
+// compareCandidates orders candidates that no Pareto rule separates. Measured
+// cost outranks a static estimate, then breadth of evidence, then strength.
+func compareCandidates(left candidate, right candidate) int {
+	if order := cmp.Compare(measuredRank(right), measuredRank(left)); order != 0 {
+		return order
+	}
+
+	if order := cmp.Compare(len(right.signals()), len(left.signals())); order != 0 {
+		return order
+	}
+
+	if order := cmp.Compare(right.topScore(), left.topScore()); order != 0 {
+		return order
+	}
+
+	return strings.Compare(left.function, right.function)
+}
+
+func measuredRank(item candidate) int {
+	if item.measured() {
 		return 1
 	}
 
 	return 0
+}
+
+// profileScore normalizes one profile row against its thresholds, so a score of
+// one means the row is exactly at the threshold.
+func profileScore(row pprofRow, index int) float64 {
+	flatThreshold, cumThreshold := cpuFlatThreshold, cpuCumThreshold
+	if index != idxCPU {
+		flatThreshold, cumThreshold = allocFlatThreshold, allocCumThreshold
+	}
+
+	return max(row.FlatPct/flatThreshold, row.CumPct/cumThreshold)
+}
+
+// complexityScore normalizes both complexity scores against their thresholds so
+// they can be compared without weighting one unit against the other.
+func complexityScore(stat complexity.Stat) float64 {
+	return max(
+		float64(stat.Cyclomatic)/cyclomaticThreshold,
+		float64(stat.Cognitive)/cognitiveThreshold,
+	)
 }
 
 func isBenchmarkFunction(function string) bool {
@@ -156,43 +573,6 @@ func isUserFunction(function string, prefixes []string) bool {
 	}
 
 	return false
-}
-
-func makeChoice(classification string, reason string, function string, cpu pprofRow, alloc pprofRow) Choice {
-	return Choice{
-		Classification: classification,
-		Reason:         reason,
-		Function:       function,
-		CPU:            cpuMetric(cpu),
-		Alloc:          allocMetric(alloc),
-	}
-}
-
-func meetsThreshold(row pprofRow, kind profileKind) bool {
-	switch kind {
-	case profileCPU:
-		return row.FlatPct >= cpuFlatThreshold || row.CumPct >= cpuCumThreshold
-	case profileAlloc:
-		return row.FlatPct >= allocFlatThreshold || row.CumPct >= allocCumThreshold
-	default:
-		return false
-	}
-}
-
-func metricScore(metric Metric, flatThreshold float64, cumThreshold float64) float64 {
-	return max(metric.FlatPct/flatThreshold, metric.CumPct/cumThreshold)
-}
-
-func profileCandidates(rows map[string]pprofRow, kind profileKind) map[string]pprofRow {
-	result := make(map[string]pprofRow)
-
-	for function, row := range rows {
-		if meetsThreshold(row, kind) {
-			result[function] = row
-		}
-	}
-
-	return result
 }
 
 func userRows(rows map[string]pprofRow, prefixes []string) map[string]pprofRow {

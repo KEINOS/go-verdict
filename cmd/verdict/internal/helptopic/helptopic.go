@@ -16,6 +16,28 @@ import (
 //go:embed topics/*.md
 var topicFiles embed.FS
 
+// fileReader abstracts file reading for testability.
+type fileReader interface {
+	ReadFile(name string) ([]byte, error)
+}
+
+// defaultFileReader wraps embed.FS to implement the fileReader interface.
+type defaultFileReader struct {
+	fs embed.FS
+}
+
+func (r defaultFileReader) ReadFile(name string) ([]byte, error) {
+	data, err := r.fs.ReadFile(name)
+	if err != nil {
+		return nil, fmt.Errorf("reading file %q: %w", name, err)
+	}
+
+	return data, nil
+}
+
+//nolint:gochecknoglobals // reader is an injection point for testing
+var reader fileReader = defaultFileReader{fs: topicFiles}
+
 // ErrUnknownTopic reports a help topic that does not exist.
 var ErrUnknownTopic = errors.New("unknown help topic")
 
@@ -51,11 +73,16 @@ func Topics() []string {
 
 // Text returns the embedded Markdown text for one topic.
 func Text(topic string) (string, error) {
+	return TextWithReader(topic, reader)
+}
+
+// TextWithReader is the internal implementation that accepts a fileReader for testing.
+func TextWithReader(topic string, r fileReader) (string, error) {
 	if !isKnownTopic(topic) {
 		return "", fmt.Errorf("%w: %q (available: %s)", ErrUnknownTopic, topic, strings.Join(Topics(), ", "))
 	}
 
-	data, err := topicFiles.ReadFile("topics/" + topic + ".md")
+	data, err := r.ReadFile("topics/" + topic + ".md")
 	if err != nil {
 		return "", fmt.Errorf("reading help topic %q: %w", topic, err)
 	}

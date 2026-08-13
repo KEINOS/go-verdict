@@ -1,5 +1,5 @@
 name: hotspot
-timeout: 60s
+timeout: 120s
 
 cases:
   - name: suggest hotspot from benchmark
@@ -10,29 +10,112 @@ cases:
         contains:
           - "./testdata/benchtargets: inspect"
           - "cpu-hotspot"
+          - "at targets.go:"
+          - "Also:"
           - "Next:"
       stderr:
         equals: ""
 
-  - name: report no benchmark workload
+  - name: fall back to complexity without a benchmark
     args: ["hotspot", "--bench", "DoesNotExist", "--benchtime", "100ms", "./testdata/benchtargets"]
     want:
       exit_code: 0
       stdout:
         contains:
-          - "./testdata/benchtargets: no benchmark workload ran"
+          - "complexity-hotspot"
+          - "benchtargets.ClassifyValues"
+          - "at complex.go:"
+          - "static estimate, not measured cost"
           - "verdict help bootstrap"
       stderr:
         equals: ""
 
   - name: output hotspot json
-    args: ["hotspot", "--bench", "BenchmarkExampleSlow", "--benchtime", "100ms", "--format", "json", "./testdata/benchtargets"]
+    args:
+      - "hotspot"
+      - "--bench"
+      - "BenchmarkExampleSlow"
+      - "--benchtime"
+      - "100ms"
+      - "--format"
+      - "json"
+      - "./testdata/benchtargets"
     want:
       exit_code: 0
       stdout:
         contains:
-          - '"schema_version": 1'
-          - '"reason": "cpu-hotspot"'
+          - '"schema_version": 2'
+          - '"classification": "cpu-hotspot"'
           - '"function": "github.com/KEINOS/go-verdict/testdata/benchtargets.exampleSlow"'
+          - '"file": "targets.go"'
+          - '"unit": "ms"'
+          - '"signals"'
+          - '"candidates"'
+      stderr:
+        equals: ""
+
+  - name: report only the suggestion with top 1
+    args:
+      - "hotspot"
+      - "--bench"
+      - "BenchmarkExampleSlow"
+      - "--benchtime"
+      - "100ms"
+      - "--top"
+      - "1"
+      - "./testdata/benchtargets"
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "./testdata/benchtargets: inspect"
+        not_contains:
+          - "Also:"
+      stderr:
+        equals: ""
+
+  - name: caveat the single profiling pass
+    args: ["hotspot", "--fast", "--bench", "BenchmarkExampleSlow", "--benchtime", "100ms", "./testdata/benchtargets"]
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "./testdata/benchtargets: inspect"
+          - "Caveat:"
+          - "--fast"
+      stderr:
+        equals: ""
+
+  - name: name a generic function once
+    args:
+      - "hotspot"
+      - "--bench"
+      - "BenchmarkClassifyGeneric"
+      - "--benchtime"
+      - "100ms"
+      - "--format"
+      - "json"
+      - "./testdata/benchtargets"
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "benchtargets.ClassifyGeneric["
+          - '"classification": "hot-and-complex"'
+        not_contains:
+          - '"function": "github.com/KEINOS/go-verdict/testdata/benchtargets.ClassifyGeneric"'
+      stderr:
+        equals: ""
+
+  - name: omit the fast caveat when nothing was measured
+    args: ["hotspot", "--fast", "--bench", "DoesNotExist", "--benchtime", "100ms", "./testdata/benchtargets"]
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "complexity-hotspot"
+          - "static estimate, not measured cost"
+        not_contains:
+          - "--fast"
       stderr:
         equals: ""

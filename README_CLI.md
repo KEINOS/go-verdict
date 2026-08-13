@@ -26,7 +26,7 @@ JSON output is useful for CI, tools, and scripts:
 benchstat old.txt new.txt | verdict --format json
 ```
 
-`verdict hotspot <package>` has its own text and JSON output. Hotspot JSON includes `schema_version`, `classification`, and a stable `reason` field so tools do not need to parse human text.
+`verdict hotspot <package>` has its own text and JSON output. Hotspot JSON includes `schema_version`, a stable `classification`, a `signals` array naming every signal that qualified, and a `candidates` array with the runners-up, so tools do not need to parse human text. Each signal reports its `unit`, `flat`, `cum`, `flat_pct`, and `cum_pct`.
 
 Example JSON:
 

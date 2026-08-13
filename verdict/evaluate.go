@@ -3,7 +3,7 @@ package verdict
 import (
 	"sort"
 
-	"github.com/KEINOS/go-verdict/verdict/internal/pareto"
+	"github.com/KEINOS/go-verdict/internal/pareto"
 )
 
 func evaluate(rows []Comparison) Report {

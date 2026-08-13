@@ -1,6 +1,8 @@
 package helptopic
 
 import (
+	"embed"
+	"errors"
 	"strings"
 	"testing"
 
@@ -48,6 +50,52 @@ func TestTextUnknownTopicListsAvailableTopics(t *testing.T) {
 		require.ErrorContains(t, err, topic,
 			"unknown topic error should list available topic %q", topic)
 	}
+}
+
+// TestTextReportsReadFileError verifies that ReadFile errors are properly handled.
+//
+//nolint:paralleltest // Not parallel because it tests error path with mock
+func TestTextReportsReadFileError(t *testing.T) {
+	//nolint:err113,exhaustruct // test errors are fine to create dynamically; data field intentionally zero
+	mockReader := &mockFileReader{
+		err: errors.New("test read error"),
+	}
+
+	text, err := TextWithReader("hotspot", mockReader)
+	require.Error(t, err)
+	require.Empty(t, text)
+	require.ErrorContains(t, err, "reading help topic")
+	require.ErrorContains(t, err, "test read error")
+}
+
+// TestDefaultFileReaderReportsReadFileError verifies defaultFileReader error handling.
+func TestDefaultFileReaderReportsReadFileError(t *testing.T) {
+	t.Parallel()
+
+	// Use an empty embed.FS that will fail to read any file
+	var emptyFS embed.FS
+
+	reader := defaultFileReader{fs: emptyFS}
+
+	data, err := reader.ReadFile("topics/nonexistent.md")
+	require.Error(t, err)
+	require.Empty(t, data)
+	require.ErrorContains(t, err, "reading file")
+	require.ErrorContains(t, err, "nonexistent.md")
+}
+
+// mockFileReader is a test helper that implements fileReader.
+type mockFileReader struct {
+	data []byte
+	err  error
+}
+
+func (m *mockFileReader) ReadFile(_ string) ([]byte, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+
+	return m.data, nil
 }
 
 func TestIndexTextListsAllTopics(t *testing.T) {

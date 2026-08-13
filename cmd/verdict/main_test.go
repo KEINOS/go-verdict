@@ -273,6 +273,15 @@ func TestRunCLIHotspotHelp(t *testing.T) {
 		"hotspot help should include subcommand usage")
 }
 
+func TestRunCLIHotspotWrapsCommandErrors(t *testing.T) {
+	t.Parallel()
+
+	err := runCLI([]string{cmdHotspot, "--no-such-flag", "./pkg"}, strings.NewReader("ignored"), &strings.Builder{})
+	require.ErrorContains(t, err, "running hotspot command",
+		"the CLI names the command that failed")
+	require.ErrorContains(t, err, "parsing hotspot flags")
+}
+
 func TestRunCLIHelpCommandListsTopics(t *testing.T) {
 	t.Parallel()
 

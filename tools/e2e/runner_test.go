@@ -31,6 +31,10 @@ func assertText(t *testing.T, streamName string, got string, want TextAssert) {
 		assert.Contains(t, got, expected, "%s should contain expected text", streamName)
 	}
 
+	for _, unexpected := range want.NotContains {
+		assert.NotContains(t, got, unexpected, "%s should not contain text", streamName)
+	}
+
 	for _, pattern := range want.Matches {
 		compiledPattern, err := regexp.Compile(pattern)
 		require.NoError(t, err, "%s has invalid regex pattern: %s", streamName, pattern)
