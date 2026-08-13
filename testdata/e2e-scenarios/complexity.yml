@@ -1,0 +1,23 @@
+name: complexity
+timeout: 20s
+
+cases:
+  - name: add mapped complexity to a raw file decision
+    args:
+      - "-a"
+      - "testdata/e2e-fixtures/bench_ExampleFast.txt"
+      - "-b"
+      - "testdata/e2e-fixtures/bench_ExampleSlow.txt"
+      - "--complexity-config"
+      - "testdata/e2e-scenarios/complexity.json"
+      - "--verbose"
+    want:
+      exit_code: 0
+      stdout:
+        contains:
+          - "BenchmarkExampleFast_vs_BenchmarkExampleSlow: BenchmarkExampleFast wins"
+          - "complexity worsened"
+          - "baseline directory"
+          - "candidate directory"
+      stderr:
+        equals: ""

@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/KEINOS/go-verdict/cmd/verdict/internal/complexity"
+	"github.com/KEINOS/go-verdict/complexity"
 	"github.com/KEINOS/go-verdict/internal/pareto"
 )
 
@@ -18,10 +18,6 @@ const (
 	allocFlatThreshold = 5.0
 	cpuCumThreshold    = 10.0
 	cpuFlatThreshold   = 5.0
-
-	// Complexity thresholds mark code worth reading, not code that is slow.
-	cognitiveThreshold  = 15.0
-	cyclomaticThreshold = 10.0
 
 	// scoreEpsilon keeps float noise from looking like a real difference.
 	scoreEpsilon = 1e-9
@@ -537,10 +533,7 @@ func profileScore(row pprofRow, index int) float64 {
 // complexityScore normalizes both complexity scores against their thresholds so
 // they can be compared without weighting one unit against the other.
 func complexityScore(stat complexity.Stat) float64 {
-	return max(
-		float64(stat.Cyclomatic)/cyclomaticThreshold,
-		float64(stat.Cognitive)/cognitiveThreshold,
-	)
+	return complexity.Score(stat)
 }
 
 func isBenchmarkFunction(function string) bool {

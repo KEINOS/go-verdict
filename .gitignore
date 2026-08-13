@@ -32,6 +32,8 @@
 !go.sum
 
 # Source/test trees.
+!complexity/
+!complexity/**
 !cmd/
 !cmd/**
 !tools/

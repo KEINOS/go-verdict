@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "benchmarks": [
+    {
+      "benchmark": "BenchmarkExampleFast_vs_BenchmarkExampleSlow",
+      "baseline": {
+        "kind": "directory",
+        "root": ".",
+        "file": "testdata/benchtargets/targets.go",
+        "symbol": "github.com/KEINOS/go-verdict/testdata/benchtargets.exampleFast"
+      },
+      "candidate": {
+        "kind": "directory",
+        "root": ".",
+        "file": "testdata/benchtargets/targets.go",
+        "symbol": "github.com/KEINOS/go-verdict/testdata/benchtargets.exampleSlow"
+      }
+    }
+  ]
+}

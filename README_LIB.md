@@ -125,6 +125,27 @@ for _, item := range report.Verdicts {
 }
 ```
 
+## Analyze Source Complexity
+
+The public `complexity` package analyzes supplied Go source bytes. File and Git resolution remain the caller's responsibility.
+
+```go
+stats, err := complexity.Analyze([]complexity.Source{{
+  ImportPath: "example.com/project/pkg",
+  Name:       "work.go",
+  Content:    sourceBytes,
+}})
+if err != nil {
+  panic(err)
+}
+
+for _, stat := range stats {
+  fmt.Println(stat.Symbol, stat.Cyclomatic, stat.Cognitive, complexity.Score(stat))
+}
+```
+
+`complexity.Score` returns `max(cyclomatic/10, cognitive/15)`. Lower scores indicate simpler code.
+
 ## Related Documentation
 
 - [go-verdict](README.md): installation and complete CLI help.

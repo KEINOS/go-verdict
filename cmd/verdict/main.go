@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/KEINOS/go-verdict/verdict"
 )
 
 const (
@@ -50,12 +52,32 @@ func runCLI(args []string, input io.Reader, output io.Writer) error {
 		return err
 	}
 
+	if cliOpts.complexity.requested {
+		return runComplexityCLI(report, cliOpts, output)
+	}
+
 	err = writeReport(report, cliOpts, output)
 	if err != nil {
 		return err
 	}
 
 	return requireReportOutcomes(report, cliOpts.requiredOutcomes)
+}
+
+func runComplexityCLI(report verdict.Report, cliOpts cliOptions, output io.Writer) error {
+	resolver := newComplexityResolver()
+
+	enriched, err := enrichComplexityReport(report, cliOpts.complexity.mappings, resolver)
+	if err != nil {
+		return err
+	}
+
+	err = writeComplexityReport(enriched, cliOpts, output)
+	if err != nil {
+		return err
+	}
+
+	return requireReportOutcomes(enriched.Report, cliOpts.requiredOutcomes)
 }
 
 func exitOnError(err error) {

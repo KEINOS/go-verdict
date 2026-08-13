@@ -28,6 +28,10 @@ benchstat old.txt new.txt | verdict --format json
 
 `verdict hotspot <package>` has its own text and JSON output. Hotspot JSON includes `schema_version`, a stable `classification`, a `signals` array naming every signal that qualified, and a `candidates` array with the runners-up, so tools do not need to parse human text. Each signal reports its `unit`, `flat`, `cum`, `flat_pct`, and `cum_pct`.
 
+When `--complexity` or `--complexity-config` is present, verbose text and JSON add source-complexity details for each verdict. A mapped benchmark has `status: compared`, both source measurements, the normalized scores, and a direction. An unmapped benchmark has the auxiliary status `not-mapped` and keeps its benchmark-only outcome.
+
+Compact text keeps the same format and shows only the final enriched outcome.
+
 Example JSON:
 
 ```json
@@ -53,6 +57,73 @@ Example JSON:
   ]
 }
 ```
+
+## Optional Source Complexity
+
+Benchmark reports do not identify the Go functions that produced each side. Complexity is therefore opt-in and requires an exact mapping. A `go.mod` by itself does not enable this feature.
+
+Use one inline JSON object per benchmark:
+
+```sh
+benchstat old.txt new.txt | verdict --complexity '{
+  "benchmark": "ExampleFast-10",
+  "baseline": {
+    "kind": "git",
+    "ref": "HEAD~1",
+    "file": "pkg/fast.go",
+    "symbol": "example.com/project/pkg.Fast"
+  },
+  "candidate": {
+    "kind": "worktree",
+    "file": "pkg/fast.go",
+    "symbol": "example.com/project/pkg.Fast"
+  }
+}'
+```
+
+For multiple benchmarks, use a versioned config:
+
+```json
+{
+  "version": 1,
+  "benchmarks": [
+    {
+      "benchmark": "ExampleFast-10",
+      "baseline": {
+        "kind": "git",
+        "ref": "HEAD~1",
+        "file": "pkg/fast.go",
+        "symbol": "example.com/project/pkg.Fast"
+      },
+      "candidate": {
+        "kind": "worktree",
+        "file": "pkg/fast.go",
+        "symbol": "example.com/project/pkg.Fast"
+      }
+    }
+  ]
+}
+```
+
+Then run:
+
+```sh
+benchstat old.txt new.txt | verdict --complexity-config complexity.json
+```
+
+Source kinds are:
+
+| Kind | Root |
+| --- | --- |
+| `worktree` | The nearest ancestor module containing `go.mod`. |
+| `git` | The same module at the required `ref`, read as Git blobs without checkout. |
+| `directory` | The required `root`, resolved from the current directory. The root must contain `go.mod`. |
+
+The `file` is relative to the selected module. The `symbol` is the exact package-qualified function name, such as `example.com/project/pkg.Fast` or `example.com/project/pkg.(*Worker).Run`.
+
+Inline mappings replace config mappings with the same benchmark. Duplicate benchmark names inside the config or among inline flags are errors. A mapping whose benchmark is absent from the parsed report is also an error.
+
+Complexity uses `max(cyclomatic/10, cognitive/15)`. Lower is better. It joins the benchmark metrics under the same Pareto rule. It can turn a benchmark `tie` into a win or turn a benchmark win into a `trade-off`, but it never turns `inconclusive` benchmark evidence into a decisive outcome.
 
 ## Threshold Options
 
@@ -122,6 +193,8 @@ benchstat old.txt new.txt | verdict --require new-wins
 ```
 
 With `--require new-wins`, the report is still written, but the command exits `1` unless every verdict is `new-wins`. Use comma-separated outcomes such as `--require new-wins,tie` when more than one outcome should pass.
+
+When source complexity is requested, `--require` checks the final enriched outcomes.
 
 ## Related Documentation
 

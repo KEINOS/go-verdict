@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/KEINOS/go-verdict/cmd/verdict/internal/complexity"
+	"github.com/KEINOS/go-verdict/complexity"
 )
 
 const (
@@ -414,12 +414,12 @@ func (command Command) scoutInTempDir(
 // candidate can carry its source position and complexity, and so a package
 // without a benchmark still has something to suggest.
 func (command Command) staticComplexity(pkg string, pkgInfo packageInfo) (map[string]complexity.Stat, error) {
-	packages, err := command.resolveModulePackages(pkg, pkgInfo.modulePath())
+	sources, err := command.resolveModuleSources(pkg, pkgInfo.modulePath())
 	if err != nil {
 		return nil, err
 	}
 
-	stats, err := complexity.Analyze(packages)
+	stats, err := complexity.Analyze(sources)
 	if err != nil {
 		return nil, fmt.Errorf("analyzing complexity: %w", err)
 	}
@@ -432,10 +432,10 @@ func (command Command) staticComplexity(pkg string, pkgInfo packageInfo) (map[st
 	return index, nil
 }
 
-// resolveModulePackages lists the packages of the target module that the
+// resolveModuleSources reads the packages of the target module that the
 // package depends on, including the package itself. Without a module path
 // there is no trustworthy user-code boundary, so nothing is analyzed.
-func (command Command) resolveModulePackages(pkg string, modulePath string) ([]complexity.Package, error) {
+func (command Command) resolveModuleSources(pkg string, modulePath string) ([]complexity.Source, error) {
 	if modulePath == "" {
 		return nil, nil
 	}
@@ -448,14 +448,18 @@ func (command Command) resolveModulePackages(pkg string, modulePath string) ([]c
 	}
 
 	decoder := json.NewDecoder(bytes.NewReader(output))
-	packages := make([]complexity.Package, 0)
+	sources := make([]complexity.Source, 0)
 
-	for decoder.More() {
+	for {
 		var item packageInfo
 
-		err = decoder.Decode(&item)
-		if err != nil {
-			return nil, fmt.Errorf("decoding go list output: %w", err)
+		decodeErr := decoder.Decode(&item)
+		if errors.Is(decodeErr, io.EOF) {
+			break
+		}
+
+		if decodeErr != nil {
+			return nil, fmt.Errorf("decoding go list output: %w", decodeErr)
 		}
 
 		files := item.sourceFiles()
@@ -463,14 +467,40 @@ func (command Command) resolveModulePackages(pkg string, modulePath string) ([]c
 			continue
 		}
 
-		packages = append(packages, complexity.Package{
+		packageSources, readErr := readPackageSources(item, files)
+		if readErr != nil {
+			return nil, readErr
+		}
+
+		sources = append(sources, packageSources...)
+	}
+
+	return sources, nil
+}
+
+func readPackageSources(item packageInfo, files []string) ([]complexity.Source, error) {
+	root, err := os.OpenRoot(item.Dir)
+	if err != nil {
+		return nil, fmt.Errorf("opening package source root: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+
+	sources := make([]complexity.Source, 0, len(files))
+
+	for _, name := range files {
+		content, readErr := root.ReadFile(name)
+		if readErr != nil {
+			return nil, fmt.Errorf("reading source %s: %w", name, readErr)
+		}
+
+		sources = append(sources, complexity.Source{
 			ImportPath: item.ImportPath,
-			Dir:        item.Dir,
-			Files:      files,
+			Name:       name,
+			Content:    content,
 		})
 	}
 
-	return packages, nil
+	return sources, nil
 }
 
 // execRunner

@@ -124,7 +124,7 @@ Project layout:
 ```text
 cmd/verdict/                   CLI entry point
 cmd/verdict/internal/helptopic/ Embedded workflow help topics for verdict help
-cmd/verdict/internal/complexity/ Static cyclomatic and cognitive complexity
+complexity/                   Public source-bytes complexity analyzer and normalized score
 cmd/verdict/internal/hotspot/  CLI-only hotspot Scout command
 cmd/verdict/internal/skill/    Embedded AI Agent skill text
 verdict/                       Public API, evaluator, and output writer

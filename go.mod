@@ -6,6 +6,7 @@ require (
 	github.com/fzipp/gocyclo v0.6.0
 	github.com/stretchr/testify v1.11.1
 	github.com/uudashr/gocognit v1.2.1
+	golang.org/x/mod v0.33.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
