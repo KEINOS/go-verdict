@@ -42,6 +42,10 @@
 !testdata/**
 !testdata/e2e-fixtures/
 
+# Example codes.
+!_examples/
+!_examples/**
+
 # Exclude generated benchmark fixtures but the directory itself.
 testdata/e2e-fixtures/**
 !testdata/e2e-fixtures/.gitkeep
