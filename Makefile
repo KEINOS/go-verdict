@@ -64,7 +64,7 @@ check: test lint e2e
 
 update:
 	@printf '\n== Update: upgrading Go module dependencies ==\n'
-	go get -u ./...
+	go get -u -t ./...
 	go mod tidy
 
 check-checkmake-exist:
