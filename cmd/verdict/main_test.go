@@ -13,18 +13,18 @@ import (
 )
 
 const (
-	argExtra        = "extra"
-	topicBenchstat  = "benchstat"
-	flagFormat      = "--format"
-	flagAlpha       = "--alpha"
-	flagMinDelta    = "--min-delta"
-	flagMode        = "--mode"
-	flagRequire     = "--require"
-	formatText      = "text"
-	removedMode     = "alternatives"
-	optionAlpha     = "alpha"
-	optionMinDelta  = "min-delta"
-	winningInput    = "name          old time/op  new time/op  delta\n" +
+	argExtra       = "extra"
+	topicBenchstat = "benchstat"
+	flagFormat     = "--format"
+	flagAlpha      = "--alpha"
+	flagMinDelta   = "--min-delta"
+	flagMode       = "--mode"
+	flagRequire    = "--require"
+	formatText     = "text"
+	removedMode    = "alternatives"
+	optionAlpha    = "alpha"
+	optionMinDelta = "min-delta"
+	winningInput   = "name          old time/op  new time/op  delta\n" +
 		"Foo-8         10.0ns ± 1%   8.0ns ± 1%  -20.00% (p=0.001 n=10+10)\n"
 	goTestBenchInput = "BenchmarkEnhance/original-10 100 10 ns/op 8 B/op 1 allocs/op\n" +
 		"BenchmarkEnhance/enhanced-10 100 8 ns/op 8 B/op 1 allocs/op\n" +
@@ -732,7 +732,7 @@ func TestReportErrorBranches(t *testing.T) {
 	require.Len(t, tests, len(reasonCodeErrorHandlers()),
 		"all expected CLI reason codes should have handlers")
 
-	//nolint:exhaustruct // Zero-value BenchmarkVerdict checks fallback labels.
+	//nolint:exhaustruct_v5 // Zero-value BenchmarkVerdict checks fallback labels.
 	err := benchmarkSetMismatchError(verdict.BenchmarkVerdict{})
 	require.ErrorContains(t, err, "verdict -a ./a.txt -b ./b.txt",
 		"fallback labels should be used in mismatch guidance")

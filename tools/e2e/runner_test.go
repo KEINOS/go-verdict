@@ -101,8 +101,7 @@ func runTestCase(t *testing.T, pathVerdictBin string, repoRoot string, timeout t
 	exitCode := 0
 
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			exitCode = exitErr.ExitCode()
 		} else {
 			require.NoError(t, err, "failed to run command")

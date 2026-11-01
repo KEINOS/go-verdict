@@ -56,7 +56,7 @@ func TestTextUnknownTopicListsAvailableTopics(t *testing.T) {
 //
 //nolint:paralleltest // Not parallel because it tests error path with mock
 func TestTextReportsReadFileError(t *testing.T) {
-	//nolint:err113,exhaustruct // test errors are fine to create dynamically; data field intentionally zero
+	//nolint:err113,exhaustruct_v5 // test errors are fine to create dynamically; data field intentionally zero
 	mockReader := &mockFileReader{
 		err: errors.New("test read error"),
 	}

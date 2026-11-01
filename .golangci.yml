@@ -10,6 +10,7 @@ linters:
     # Deprecated linters
     - wsl
     - gomodguard
+    - exhaustruct
     # == Project policy ==
     - depguard
     - testpackage

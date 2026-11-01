@@ -1,4 +1,4 @@
-//nolint:exhaustruct // Tests intentionally use partial struct literals.
+//nolint:exhaustruct_v5 // Tests intentionally use partial struct literals.
 package benchstat
 
 import (

@@ -4,6 +4,7 @@
 .PHONY: data data-cache-hit data-cache-key data-cache-save data-generate
 .PHONY: data-example-mismatch data-benchstat-repeat-fast data-gotestbench data-insufficient
 .PHONY: e2e
+.PHONY: update
 .PHONY: fieldalign fieldalign-fix
 .PHONY: check-checkmake-exist check-fieldalignment-exist check-golangci-lint-exist check-jq-exist check-markdownlint-cli2-exist check-yamlfmt-exist
 .PHONY: lint-e2e lint-go lint-makefile lint-md lint-yaml
@@ -32,6 +33,7 @@ HELP_LINES := \
 	'  make test-fuzz            Run parser fuzz tests. Override duration with FUZZTIME=1m.' \
 	'  make test-e2e             Build verdict, prepare fixtures, then run YAML E2E scenarios.' \
 	'  make lint                 Run mutating fixers: go fix, golangci-lint run --fix, markdownlint-cli2 --fix, yamlfmt.' \
+	'  make update               Upgrade Go module dependencies and tidy go.mod/go.sum.' \
 	'  make fieldalign           Report fieldalignment findings as JSON. Intended for TDD refactor review.' \
 	'  make fieldalign-fix       Apply fieldalignment fixes. Review the diff before keeping changes.' \
 	'  make build                Remove ./dist, then build ./dist/verdict.' \
@@ -59,6 +61,11 @@ build-binary:
 	@go build -ldflags="-s -w" -trimpath -o $(VERDICT) ./cmd/verdict
 
 check: test lint e2e
+
+update:
+	@printf '\n== Update: upgrading Go module dependencies ==\n'
+	go get -u ./...
+	go mod tidy
 
 check-checkmake-exist:
 	@command -v checkmake >/dev/null 2>&1 || (echo "FAIL: checkmake command is not installed" && exit 1)
