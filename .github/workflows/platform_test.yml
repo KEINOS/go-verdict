@@ -46,7 +46,7 @@ jobs:
 
       - name: Run Markdown lint
         if: runner.os == 'Linux'
-        uses: DavidAnson/markdownlint-cli2-action@v24
+        uses: DavidAnson/markdownlint-cli2-action@v25
         with:
           globs: '**/*.md'
 
